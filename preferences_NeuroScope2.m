@@ -15,15 +15,16 @@ preferences.plotStyle = 2; % Plot style
 preferences.greyScaleTraces = 1; % Plot colors
 preferences.channelOrder = 1; % Channel order
 preferences.plotTracesInColumns = false; % Plot traces in columns
-preferences.colorByChannels = false; % Color by channel order
-preferences.colorByChannels2 = false; % Color by channel order
+preferences.colorByChannels = 1; % Color by channel order
 preferences.nColorGroups = 10; % Number of color groups when coloring by channel order
 preferences.displayMenu = 0; % Show the regular Matlab menu
 preferences.background = [0 0 0]; % Background color
 preferences.textBackground = [0 0 0 0.7]; % Text backgroups, semi-transparent
 preferences.primaryColor = [1 1 1]; % Primary color of trace highlights and text
+preferences.linewidth = 1.2; % Linewidth of ephys traces
 preferences.showChannelNumbers = false; % Show channel numbers next to traces
 preferences.showScalebar = false; % A vertical scalebar shown in upper left corner
+preferences.showTimeScalebar = false; % A horizontal time scalebar shown in lower right corner
 preferences.narrowPadding = false; % Padding above and below traces
 preferences.ephys_padding = 0.05; % Initial padding above and below ephys traces
 preferences.text_spacing = 0.016; % Vertical spacing between legends
@@ -33,7 +34,7 @@ preferences.insetRelativeWidth = 1/4;
 preferences.insetRelativeHeight = 1/4;
 preferences.stickySelection = false;
 preferences.to_save = {'windowDuration','plotStyle','greyScaleTraces','colormap','scalingFactor','background','textBackground','primaryColor',...
-    'extraSpacing','plotTracesInColumns','showChannelNumbers','showScalebar','narrowPadding','stickySelection','resetZoomOnNavigation'};
+    'extraSpacing','plotTracesInColumns','showChannelNumbers','showScalebar','showTimeScalebar','narrowPadding','stickySelection','resetZoomOnNavigation'};
 
 if ismac
     preferences.fontsize = 11;
@@ -65,6 +66,8 @@ preferences.spikesDetectionPolarity = false; % Detect spikes with both polarity
 preferences.showWaveformsBelowTrace = true;
 preferences.showDetectedSpikeWaveforms = false;
 preferences.showDetectedSpikesPCAspace = false;
+preferences.showDetectedSpikesAmplitudeDistribution = false;
+preferences.showDetectedSpikesCountAcrossChannels = false;
 preferences.showDetectedSpikesPopulationRate = false;
 preferences.colorDetectedSpikesByWidth = false;
 preferences.interneuronMaxWidth = 0.5; % in ms
@@ -145,6 +148,5 @@ preferences.instantaneousMetrics.higherBand = 220;
 
 % Audio
 % only works together with the DSP System Toolbox or the Audio Toolbox
-preferences.audioPlay = false; % Can be true or false
 preferences.audioChannels = [1,2]; % Up to two channels can be selected
 preferences.audioGain = 3; % Gain factor, recommended: 1:5 = 1,2,5,10,20

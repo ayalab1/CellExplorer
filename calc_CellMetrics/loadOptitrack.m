@@ -14,7 +14,7 @@ addParameter(p,'basepath', pwd, @isstr); % Basepath of the session
 addParameter(p,'basename', [], @isstr); % Name of the session
 addParameter(p,'dataName','',@isstr); % Any renaming of the behavior struct
 addParameter(p,'filenames', '',@iscellstr); % List of tracking files 
-addParameter(p,'scaling_factor', 1, @isnumeric); % An scaling-factor to apply to the x,y,z data.
+addParameter(p,'scaling_factor', 1, @isnumeric); % A scaling-factor to apply to the x,y,z data.
 addParameter(p,'offset_origin', [0,0,0], @isnumeric); % An offset to apply to the x,y,z data (shift of origin). Applied after the scaling. In cm
 addParameter(p,'rotation', [], @isnumeric); % A rotation to apply to the x,y data (in degrees). Applied after the offset.
 addParameter(p,'saveMat', true, @islogical); % Creates behavior mat file
@@ -94,7 +94,15 @@ optitrack_temp.TotalExportedFrames = str2double(dataArray{14}(1));
 optitrack_temp.RotationType = dataArray{16}(1);
 optitrack_temp.LenghtUnit = dataArray{18}(1);
 optitrack_temp.CoorinateSpace = dataArray{20}(1);
-optitrack_temp.FrameRate = str2double(dataArray{6}{1});
+
+frameRate_old = str2double(dataArray{6}{1});
+if isempty(frameRate_old) || isnan(frameRate_old)
+    % If old format is invalid, use new format (index 8)
+    optitrack_temp.FrameRate = str2double(dataArray{8}{1});
+else
+    % Use old format value if valid
+    optitrack_temp.FrameRate = frameRate_old;
+end
 
 clear dataArray
 clearvars filename formatSpec fileID dataArray header_length;
@@ -166,7 +174,8 @@ end
 if parameters.plotFig
     fig1 = figure;
     subplot(1,2,1)
-    plot3(position3D(:,1),position3D(:,2),position3D(:,3)), title('Position'), xlabel('X (cm)'), ylabel('Y (cm)'), zlabel('Z (cm)'),axis tight,view(2), hold on
+    % plot3(position3D(:,1),position3D(:,2),position3D(:,3)), title('Position'), xlabel('X (cm)'), ylabel('Y (cm)'), zlabel('Z (cm)'),axis tight, view(2), hold on
+    plot3(position3D(:,1),position3D(:,2),position3D(:,3)), title('Position'), xlabel('X (cm)'), ylabel('Y (cm)'), zlabel('Z (cm)'),axis tight, hold on
     subplot(1,2,2)
     plot3(position3D(:,1),position3D(:,2),animal_speed), hold on
     xlabel('X (cm)'), ylabel('Y (cm)'),zlabel('Speed (cm/s)'), axis tight

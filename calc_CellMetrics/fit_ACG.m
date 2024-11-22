@@ -10,7 +10,6 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
         plots = true;
     end
     
-    
     % acg_narrow = cell_metrics.acg.narrow;
     acg_narrow(100:102) = 0; % Sets the time-zero bin to zero (-0.5ms -> 0.5ms)
     offset = 101;
@@ -39,14 +38,14 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
     % Curve Fitting Toolbox
     % % % % % % % % % % % % % % % % % % % % %
     
-    g = fittype('max(c*(exp(-(x-f)/a)-d*exp(-(x-f)/b))+h*exp(-(x-f)/g)+e,0)','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c','d','e','f','g','h'});
+    fit_equation = fittype('max(c*(exp(-(x-f)/a)-d*exp(-(x-f)/b))+h*exp(-(x-f)/g)+e,0)','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c','d','e','f','g','h'});
     
     if parallel_toolbox_installed
         % Fitting ACGs in parfor
         gcp;
         parfor j = 1:size(acg_narrow,2)
             if ~any(isnan(acg_narrow(:,j)))
-                [f0,gof] = fit(x,acg_narrow(x*2+offset,j),g,'StartPoint',a0,'Lower',lb,'Upper',ub);
+                [f0,gof] = fit(x,acg_narrow(x*2+offset,j),fit_equation,'StartPoint',a0,'Lower',lb,'Upper',ub);
                 plotf0(:,j) = f0(x);
                 fit_params(:,j) = coeffvalues(f0);
                 rsquare(j) = gof.rsquare;
@@ -55,11 +54,10 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
     else
         for j = 1:size(acg_narrow,2)
             if ~any(isnan(acg_narrow(:,j)))
-                [f0,gof] = fit(x,acg_narrow(x*2+offset,j),g,'StartPoint',a0,'Lower',lb,'Upper',ub);
+                [f0,gof] = fit(x,acg_narrow(x*2+offset,j),fit_equation,'StartPoint',a0,'Lower',lb,'Upper',ub);
                 plotf0(:,j) = f0(x);
                 fit_params(:,j) = coeffvalues(f0);
                 rsquare(j) = gof.rsquare;
-                
                 
                 a = fit_params(1);
                 b = fit_params(2);
@@ -72,7 +70,7 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
                 x_fit = ([1:0.1:100]/2)';
                 fiteqn = max(c*(exp(-(x_fit-f)/a)-d*exp(-(x_fit-f)/b))+h*exp(-(x_fit-f)/g)+e,0);
                 figure(3), clf
-                plot(x,ydata), hold on
+                plot(x,acg_narrow(x*2+offset,j)), hold on
                 plot(x_fit,fiteqn),
                 text(0.5,0.5,num2str(fit_params),'Units','normalized')
             end
