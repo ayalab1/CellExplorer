@@ -758,6 +758,10 @@ if parameters.forceReload
 
             for k = 1:length(electrodeGroups)
                 electrodeGroup = electrodeGroups(k);
+                if ~exist(fullfile(clusteringpath_full, [basename '.clu.' num2str(electrodeGroup)]),'file'),
+                    disp(['.clu.' num2str(electrodeGroup) ' file not found. Skipping electrode group #' num2str(electrodeGroup) '/' num2str(length(electrodeGroups))])
+                    continue;
+                end
                 disp(['Loading electrode group #' num2str(electrodeGroup) '/' num2str(length(electrodeGroups)) ])
                 if ~raw_clusters
                     cluster_index = load(fullfile(clusteringpath_full, [basename '.clu.' num2str(electrodeGroup)]));
@@ -777,11 +781,13 @@ if parameters.forceReload
                 cluster_index = cluster_index(2:end);
                 nb_clusters = unique(cluster_index);
                 nb_clusters2 = nb_clusters(nb_clusters > 1);
-
-                % calc waveform x axis (time in seconds)
-                [~,midx] = min(squeeze(waveforms(1,:,:)));
-                timeWaveform = ((1:size(waveforms,2)) - mode(midx)) / session.extracellular.sr * 1000;
-
+                
+                if exist('waveforms','var') && ~parameters.getWaveformsFromDat
+                    % calc waveform x axis (time in seconds)
+                    [~,midx] = min(squeeze(waveforms(1,:,:)));
+                    timeWaveform = ((1:size(waveforms,2)) - mode(midx)) / session.extracellular.sr * 1000;
+                end
+                
                 tol_samples = session.extracellular.sr*5e-4; % 0.5 ms tolerance in timestamp units
                 for i = 1:length(nb_clusters2)
                     UID = UID +1;
@@ -802,15 +808,14 @@ if parameters.forceReload
                         %                         spikes.filtWaveform_std{unit_nb} = spikes.filtWaveform_all_std{unit_nb}(index1,:);
                         spikes.peakVoltage(UID) = max(spikes.filtWaveform{UID}) - min(spikes.filtWaveform{UID});
                         spikes.channels_all{UID} = session.extracellular.electrodeGroups.channels{k};
-                        spikes.timeWaveform{UID} = timeWaveform;
+                        if exist('timeWaveform','var') && ~parameters.getWaveformsFromDat
+                            spikes.timeWaveform{UID} = timeWaveform;
+                            spikes.processinginfo.params.WaveformsSource = 'spk files';
+                        end
                     end
-                end
-                if parameters.getWaveformsFromDat
-                    spikes.processinginfo.params.WaveformsSource = 'spk files';
                 end
             end
             clear cluster_index time_stamps
-
         case {'klustaviewa','klustasuite'} % Loading klustaViewa - Kwik format (Klustasuite 0.3.0.beta4)
             disp('loadSpikes: Loading KlustaViewa data')
             kwik_file = fullfile(clusteringpath_full, [basename, '.kwik']);
