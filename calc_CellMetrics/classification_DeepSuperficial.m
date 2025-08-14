@@ -236,6 +236,20 @@ for jj = 1:session.extracellular.nElectrodeGroups
     SWR_amplitude{jj} = ripple_channels{jj}*nan;
 end
 
+% Loading .lfp file
+if exist(fullfile(basepath,[basename '.lfp']),'file')
+    fileName = fullfile(basepath,[basename '.lfp']);
+elseif exist(fullfile(basepath,[basename '.eeg']),'file')
+    fileName = fullfile(basepath,[basename '.eeg']);
+else
+    error('lfp file not found')
+end
+
+filenamestruct = dir(fileName);
+dataTypeNBytes = numel(typecast(cast(0, 'int16'), 'uint8')); % determine number of bytes per sample
+nSamp = filenamestruct.bytes/(nChannels*dataTypeNBytes);  % Number of samples per channel
+mmf = memmapfile(fileName, 'Format', {'int16', [nChannels,nSamp], 'data'},'Writable',false);
+
 SWR_slope = [];
 for jj = 1:session.extracellular.nElectrodeGroups
     
@@ -249,21 +263,7 @@ for jj = 1:session.extracellular.nElectrodeGroups
     if isempty(ripple_channels{jj})
         continue
     end
-    
-    % Loading .lfp file
-    if exist(fullfile(basepath,[basename '.lfp']),'file')
-        fileName = fullfile(basepath,[basename '.lfp']);
-    elseif exist(fullfile(basepath,[basename '.eeg']),'file')
-        fileName = fullfile(basepath,[basename '.eeg']);
-    else
-        error('lfp file not found')
-    end
-    
-    filenamestruct = dir(fileName);
-    dataTypeNBytes = numel(typecast(cast(0, 'int16'), 'uint8')); % determine number of bytes per sample
-    nSamp = filenamestruct.bytes/(nChannels*dataTypeNBytes);  % Number of samples per channel
-    mmf = memmapfile(fileName, 'Format', {'int16', [nChannels,nSamp], 'data'},'Writable',false);
-    
+
     ripple_ave2 = [];
     % Only include ripples outside 151 samples from the start/end of the lfp file
     ripples.peaks = ripples.peaks(find(ripples.peaks*srLfp>151 & ripples.peaks*srLfp<nSamp-151));
