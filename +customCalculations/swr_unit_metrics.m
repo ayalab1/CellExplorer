@@ -1,5 +1,5 @@
-function cell_metrics = swr_unit_metrics(cell_metrics,session,spikes,parameters)
-% swr_unit_metrics: 
+function cell_metrics = swr_unit_metrics(cell_metrics, session, spikes, parameters)
+% swr_unit_metrics:
 %
 % INPUTS
 % cell_metrics - cell_metrics struct
@@ -18,7 +18,7 @@ function cell_metrics = swr_unit_metrics(cell_metrics,session,spikes,parameters)
 %     cell_metrics.ripple_GainAll
 %     cell_metrics.ripple_GainParticip
 %     cell_metrics.ripple_nSpkAll
-%     cell_metrics.ripple_nSpkParticip 
+%     cell_metrics.ripple_nSpkParticip
 %
 %     metrics for individual units will be calculated for each state as well
 %
@@ -28,17 +28,21 @@ function cell_metrics = swr_unit_metrics(cell_metrics,session,spikes,parameters)
 basepath = session.general.basePath;
 basename = basenameFromBasepath(basepath);
 
-if exist(fullfile(basepath,[basename,'.ripples.events.mat']),'file')
-    
-    load(fullfile(basepath,[basename,'.ripples.events.mat']),'ripples')
-    
-    if isfield(ripples,'flagged')
-        ripples.timestamps(ripples.flagged,:) = [];
+if exist(fullfile(basepath, [basename, '.ripples.events.mat']), 'file')
+
+    load(fullfile(basepath, [basename, '.ripples.events.mat']), 'ripples')
+
+    if isfield(ripples, 'flagged')
+        ripples.timestamps(ripples.flagged, :) = [];
     end
+    % remove zero duration ripples
+    ripples.timestamps((ripples.timestamps(:, 2) - ripples.timestamps(:, 1)) == 0, :) = [];
+
+    % add to interval array
     ripples = IntervalArray(ripples.timestamps);
 
-    SWRunitMetrics = main(spikes{1},ripples);
-    
+    SWRunitMetrics = main(spikes{1}, ripples);
+
     % single cell metrics to cell_metrics
     cell_metrics.ripple_particip = SWRunitMetrics.particip;
     cell_metrics.ripple_FRall = SWRunitMetrics.FRall;
@@ -47,25 +51,25 @@ if exist(fullfile(basepath,[basename,'.ripples.events.mat']),'file')
     cell_metrics.ripple_GainParticip = SWRunitMetrics.GainParticip;
     cell_metrics.ripple_nSpkAll = SWRunitMetrics.nSpkAll;
     cell_metrics.ripple_nSpkParticip = SWRunitMetrics.nSpkParticip;
-    
-    if any(contains(parameters.metrics,{'state_metrics','all'})) &&...
-            ~any(contains(parameters.excludeMetrics,{'state_metrics'}))
-        
-        spkExclu = setSpkExclu('state_metrics',parameters);
-        
-        statesFiles = dir(fullfile(basepath,[basename,'.*.states.mat']));
+
+    if any(contains(parameters.metrics, {'state_metrics', 'all'})) && ...
+            ~any(contains(parameters.excludeMetrics, {'state_metrics'}))
+
+        spkExclu = setSpkExclu('state_metrics', parameters);
+
+        statesFiles = dir(fullfile(basepath, [basename, '.*.states.mat']));
         statesFiles = {statesFiles.name};
-        statesFiles(contains(statesFiles,parameters.ignoreStateTypes))=[];
+        statesFiles(contains(statesFiles, parameters.ignoreStateTypes)) = [];
         for iEvents = 1:length(statesFiles)
-            statesName = strsplit(statesFiles{iEvents},'.');
+            statesName = strsplit(statesFiles{iEvents}, '.');
             statesName = statesName{end-2};
-            eventOut = load(fullfile(basepath,statesFiles{iEvents}));
-            
-            if isfield(eventOut.(statesName),'ints')
+            eventOut = load(fullfile(basepath, statesFiles{iEvents}));
+
+            if isfield(eventOut.(statesName), 'ints')
                 states = eventOut.(statesName).ints;
                 statenames = fieldnames(states);
                 for iStates = 1:numel(statenames)
-                    if ~size(states.(statenames{iStates}),1) > 0
+                    if ~size(states.(statenames{iStates}), 1) > 0
                         continue
                     end
                     current_ripples = ripples & IntervalArray(states.(statenames{iStates}));
@@ -74,16 +78,16 @@ if exist(fullfile(basepath,[basename,'.ripples.events.mat']),'file')
                         continue
                     end
 
-                    SWRunitMetrics = main(spikes{spkExclu},...
+                    SWRunitMetrics = main(spikes{spkExclu}, ...
                         current_ripples);
-                    
+
                     % single cell metrics to cell_metrics
-                    cell_metrics.(['ripple_particip_' statenames{iStates}]) = SWRunitMetrics.particip;
-                    cell_metrics.(['ripple_FRall_' statenames{iStates}]) = SWRunitMetrics.FRall;
-                    cell_metrics.(['ripple_FRparticip_' statenames{iStates}]) = SWRunitMetrics.FRparticip;
-                    cell_metrics.(['ripple_GainAll_' statenames{iStates}]) = SWRunitMetrics.GainAll;
-                    cell_metrics.(['ripple_GainParticip_' statenames{iStates}]) = SWRunitMetrics.GainParticip;
-                    cell_metrics.(['ripple_nSpkParticip_' statenames{iStates}]) = SWRunitMetrics.nSpkParticip;
+                    cell_metrics.(['ripple_particip_', statenames{iStates}]) = SWRunitMetrics.particip;
+                    cell_metrics.(['ripple_FRall_', statenames{iStates}]) = SWRunitMetrics.FRall;
+                    cell_metrics.(['ripple_FRparticip_', statenames{iStates}]) = SWRunitMetrics.FRparticip;
+                    cell_metrics.(['ripple_GainAll_', statenames{iStates}]) = SWRunitMetrics.GainAll;
+                    cell_metrics.(['ripple_GainParticip_', statenames{iStates}]) = SWRunitMetrics.GainParticip;
+                    cell_metrics.(['ripple_nSpkParticip_', statenames{iStates}]) = SWRunitMetrics.nSpkParticip;
                 end
             end
         end
@@ -91,15 +95,15 @@ if exist(fullfile(basepath,[basename,'.ripples.events.mat']),'file')
 end
 end
 
-function spkExclu = setSpkExclu(metrics,parameters)
-if ismember(metrics,parameters.metricsToExcludeManipulationIntervals)
+function spkExclu = setSpkExclu(metrics, parameters)
+if ismember(metrics, parameters.metricsToExcludeManipulationIntervals)
     spkExclu = 2; % Spikes excluding times within exclusion intervals
 else
     spkExclu = 1; % All spikes (can be restricted)
 end
 end
 
-function SWRunitMetrics = main(spikes,ripple_epochs)
+function SWRunitMetrics = main(spikes, ripple_epochs)
 
 % add spikes to objects
 st = SpikeArray(spikes.times);
@@ -111,34 +115,33 @@ firingRate = st.n_spikes / st.duration;
 bst = get_participation(st, ripple_epochs, 'firing_rate');
 
 % calc participation prob
-SWRunitMetrics.particip = mean(bst>0,2)';
+SWRunitMetrics.particip = mean(bst > 0, 2)';
 
 % get ripple firing rate
 st_rip = st(ripple_epochs);
 SWRunitMetrics.FRall = (st_rip.n_spikes ./ ripple_epochs.duration)';
 
 % get avg firing rate within ripples where the cell was active
-for i = 1:size(bst,1)
-    SWRunitMetrics.FRparticip(i) = mean(bst(i, bst(i,:) > 0));
+for i = 1:size(bst, 1)
+    SWRunitMetrics.FRparticip(i) = mean(bst(i, bst(i, :) > 0));
 end
 
 % get firing rain
 SWRunitMetrics.GainAll = (SWRunitMetrics.FRall' ./ firingRate)';
 
 % get gain withing ripples where the cell was active
-for i = 1:size(bst,1)
-    SWRunitMetrics.GainParticip(i) = mean(bst(i,bst(i,:) > 0)) / firingRate(i);
+for i = 1:size(bst, 1)
+    SWRunitMetrics.GainParticip(i) = mean(bst(i, bst(i, :) > 0)) / firingRate(i);
 end
 
 % convert fr matrix to counts matrix by multiplying by ripple durations
 counts = bst .* ripple_epochs.lengths';
 
 % get avg number of spikes per event
-SWRunitMetrics.nSpkAll = mean(counts,2)';
+SWRunitMetrics.nSpkAll = mean(counts, 2)';
 
 % get avg number of spikes where the cell was active
-for i = 1:size(bst,1)
-    SWRunitMetrics.nSpkParticip(i) = mean(counts(i,bst(i,:) > 0));
+for i = 1:size(bst, 1)
+    SWRunitMetrics.nSpkParticip(i) = mean(counts(i, bst(i, :) > 0));
 end
 end
-
