@@ -7818,8 +7818,26 @@ end
             epochIdx = find(efi.startTimes <= tCurrent & efi.stopTimes > tCurrent, 1, 'first');
 
             if isempty(epochIdx)
-                % tCurrent is in a gap between epochs or past the end: leave remaining as zeros
-                break
+                % tCurrent is not contained in any epoch (floating-point boundary
+                % imprecision or a genuine recording gap between epochs).
+                % Find the next epoch that starts after tCurrent.
+                nextIdx = find(efi.startTimes > tCurrent, 1, 'first');
+                if isempty(nextIdx)
+                    % No subsequent epochs – zero-pad the rest of the window.
+                    break
+                end
+                % Skip over the gap (already zero-initialised) and resume at the
+                % start of the next epoch.  Works for tiny float gaps (gapSamples=0)
+                % and genuine multi-second gaps alike.
+                gapSamples = max(0, round((efi.startTimes(nextIdx) - tCurrent) * sr));
+                if gapSamples >= samplesRemaining
+                    % Gap extends to or beyond the end of the window.
+                    break
+                end
+                sampleIdx = sampleIdx + gapSamples;
+                samplesRemaining = samplesRemaining - gapSamples;
+                tCurrent = efi.startTimes(nextIdx);
+                continue
             end
 
             fid = efi.fids(epochIdx);
