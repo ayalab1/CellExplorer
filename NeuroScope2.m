@@ -5113,6 +5113,15 @@ end
         
         UI.track = true;
         UI.t_total = 0; % Length of the recording in seconds
+
+        % Close any open sub-epoch dat file handles before clearing the info struct
+        if isfield(UI,'data') && isfield(UI.data,'epochFileInfo') && ~isempty(UI.data.epochFileInfo) && isfield(UI.data.epochFileInfo,'fids')
+            for i_epoch = 1:numel(UI.data.epochFileInfo.fids)
+                if UI.data.epochFileInfo.fids(i_epoch) > 0
+                    fclose(UI.data.epochFileInfo.fids(i_epoch));
+                end
+            end
+        end
         UI.data.epochFileInfo = []; % Struct for sub-epoch dat file info (populated when basename.dat is missing)
         
         % Restting UI and imported data
@@ -7807,6 +7816,8 @@ end
         precision = UI.settings.precision;
         lsb = UI.settings.leastSignificantBit;
         efi = UI.data.epochFileInfo;
+
+        nSamples = round(nSamples); % Ensure integer sample count
 
         raw = zeros(nSamples, nChannels);
         samplesRemaining = nSamples;
