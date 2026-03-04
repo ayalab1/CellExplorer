@@ -5294,6 +5294,12 @@ end
             UI.data.epochFileInfo = detectSubEpochDatFiles(basepath, data.session);
             if ~isempty(UI.data.epochFileInfo)
                 UI.t_total = UI.data.epochFileInfo.stopTimes(end);
+                % If a previously saved LFP plot style is loaded from session.mat, override it
+                % because sub-epoch raw dat files are now available.
+                if UI.settings.plotStyle == 4 % LFP plot style
+                    UI.settings.plotStyle = 2; % Range plot style (dat-compatible)
+                    UI.panel.general.plotStyle.Value = UI.settings.plotStyle;
+                end
             end
         end
         
@@ -7830,7 +7836,11 @@ end
             samplesToRead = min(samplesRemaining, samplesInEpoch);
 
             if samplesToRead <= 0
-                break
+                % Floating-point imprecision can leave tCurrent just below epochStop
+                % with zero samples remaining in this epoch. Advance to the epoch
+                % boundary so the next iteration picks up the following epoch.
+                tCurrent = epochStop;
+                continue
             end
 
             chunk = double(fread(fid, [nChannels, samplesToRead], precision))' * lsb;
