@@ -7735,6 +7735,7 @@ end
         nChannels = session.extracellular.nChannels;
 
         found_any = false;
+        lastStopTime = 0; % Tracks the end of the last successfully processed epoch (for fallback timing)
         for i = 1:nEpochs
             epoch = session.epochs{i};
             if ~isfield(epoch,'name') || isempty(epoch.name)
@@ -7771,20 +7772,17 @@ end
             end
             fids(i) = fid;
 
-            % Use session epoch times if available; otherwise compute from file size
-            if isfield(epoch,'startTime') && isfield(epoch,'stopTime')
+            % Use session epoch times if available and non-empty; otherwise compute from file size
+            if isfield(epoch,'startTime') && isfield(epoch,'stopTime') && ~isempty(epoch.startTime) && ~isempty(epoch.stopTime)
                 startTimes(i) = epoch.startTime;
                 stopTimes(i) = epoch.stopTime;
+                lastStopTime = epoch.stopTime;
             else
                 s = dir(foundFile);
                 duration = s.bytes / (nChannels * sr * 2);
-                if i == 1
-                    startTimes(i) = 0;
-                    stopTimes(i) = duration;
-                else
-                    startTimes(i) = stopTimes(i-1);
-                    stopTimes(i) = startTimes(i) + duration;
-                end
+                startTimes(i) = lastStopTime;
+                stopTimes(i) = lastStopTime + duration;
+                lastStopTime = stopTimes(i);
             end
             found_any = true;
         end
@@ -7799,13 +7797,17 @@ end
             return
         end
 
-        % Only keep epochs for which a file was found
-        validIdx = ~cellfun(@isempty, fileNames);
-        epochFileInfo.nEpochs = sum(validIdx);
-        epochFileInfo.fileNames = fileNames(validIdx);
-        epochFileInfo.startTimes = startTimes(validIdx);
-        epochFileInfo.stopTimes = stopTimes(validIdx);
-        epochFileInfo.fids = fids(validIdx);
+        % Only keep epochs for which a file was found, sorted by start time
+        % (readFromSubEpochFiles assumes monotonically ordered epochs)
+        validIdxNums = find(~cellfun(@isempty, fileNames));
+        [~, sortOrder] = sort(startTimes(validIdxNums));
+        sortedIdx = validIdxNums(sortOrder);
+
+        epochFileInfo.nEpochs    = numel(sortedIdx);
+        epochFileInfo.startTimes = startTimes(sortedIdx);
+        epochFileInfo.stopTimes  = stopTimes(sortedIdx);
+        epochFileInfo.fileNames  = fileNames(sortedIdx);
+        epochFileInfo.fids       = fids(sortedIdx);
     end
 
     function raw = readFromSubEpochFiles(t0, nSamples, sr)
