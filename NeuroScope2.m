@@ -7713,11 +7713,22 @@ end
         % detectSubEpochDatFiles: Finds individual .dat files for sub-epochs
         % when the merged basename.dat does not exist.
         %
-        % The function searches for epoch .dat files in these locations (in order):
-        %   1. basepath/epoch_name/epoch_name.dat
-        %   2. basepath/epoch_name/amplifier.dat
-        %   3. parent_dir/epoch_name/epoch_name.dat
-        %   4. parent_dir/epoch_name/amplifier.dat
+        % Supports both Intan (flat) and Open Ephys (nested) recording formats.
+        % For each epoch the function searches in this order:
+        %
+        %   Intan (flat layout):
+        %     1. basepath/epoch_name/epoch_name.dat
+        %     2. basepath/epoch_name/amplifier.dat
+        %     3. parent_dir/epoch_name/epoch_name.dat
+        %     4. parent_dir/epoch_name/amplifier.dat
+        %
+        %   Open Ephys (nested layout -- any combination of streams):
+        %     5. Recursively searches basepath/epoch_name/ for continuous.dat
+        %        following the Open Ephys binary tree:
+        %        <epoch>/<Record Node N>/<experimentN>/<recordingN>/continuous/<stream>/continuous.dat
+        %        Stream priority: Acquisition_Board (Intan Rhythm) > ProbeA-AP
+        %        (Neuropixels AP) > ProbeA > first continuous.dat found
+        %     6. Same recursive search under parent_dir/epoch_name/
 
         epochFileInfo = [];
         if ~isfield(session,'epochs') || isempty(session.epochs)
@@ -7743,7 +7754,7 @@ end
             end
             epochName = epoch.name;
 
-            % Try candidate file paths in order of preference
+            % --- Intan flat candidates ---
             candidates = {
                 fullfile(basepath, epochName, [epochName, '.dat']);
                 fullfile(basepath, epochName, 'amplifier.dat');
@@ -7756,6 +7767,18 @@ end
                 if exist(candidates{j},'file')
                     foundFile = candidates{j};
                     break
+                end
+            end
+
+            % --- Open Ephys nested search (if flat candidates not found) ---
+            if isempty(foundFile)
+                for searchRoot = {fullfile(basepath, epochName), fullfile(parent_dir, epochName)}
+                    if exist(searchRoot{1}, 'dir')
+                        foundFile = findOpenEphysContinuousDat(searchRoot{1});
+                        if ~isempty(foundFile)
+                            break
+                        end
+                    end
                 end
             end
 
@@ -7808,6 +7831,68 @@ end
         epochFileInfo.stopTimes  = stopTimes(sortedIdx);
         epochFileInfo.fileNames  = fileNames(sortedIdx);
         epochFileInfo.fids       = fids(sortedIdx);
+    end
+
+    function foundFile = findOpenEphysContinuousDat(epochDir)
+        % findOpenEphysContinuousDat  Locate the primary continuous.dat file within
+        % an Open Ephys recording tree rooted at epochDir.
+        %
+        % Open Ephys binary format nests data as:
+        %   <epochDir>/Record Node <N>/experiment<N>/recording<N>/continuous/<stream>/continuous.dat
+        %
+        % Stream-name priority (highest first):
+        %   1. Acquisition_Board-*.Rhythm Data  (Intan Rhythm board via Open Ephys)
+        %   2. Neuropix-PXI-*.ProbeA-AP         (Neuropixels AP band, new naming)
+        %   3. Neuropix-PXI-*.0                 (Neuropixels stream ending in .0, AP band in older naming)
+        %   4. Any ProbeA stream
+        %   5. First non-LFP continuous.dat     (fallback for any other stream)
+
+        foundFile = '';
+
+        % Recursively find all continuous.dat files under epochDir
+        hits = dir(fullfile(epochDir, '**', 'continuous.dat'));
+        if isempty(hits)
+            return
+        end
+
+        % Build full paths and filter out LFP-band streams (not useful for raw viewing)
+        fullPaths = fullfile({hits.folder}, {hits.name});
+        isLFP = ~cellfun(@isempty, regexpi(fullPaths, 'ProbeA-LFP'));
+        fullPaths = fullPaths(~isLFP);
+        if isempty(fullPaths)
+            return
+        end
+
+        % Priority 1: Intan Rhythm Data board (Acquisition_Board-*)
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Acquisition_Board.*Rhythm')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 2: Neuropixels AP band -- new naming (ProbeA-AP)
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'ProbeA-AP')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 3: Neuropixels AP band -- older naming (stream folder ends in '.0')
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Neuropix.*\.0')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 4: Any ProbeA stream
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'ProbeA')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 5: First remaining continuous.dat
+        foundFile = fullPaths{1};
     end
 
     function raw = readFromSubEpochFiles(t0, nSamples, sr)
