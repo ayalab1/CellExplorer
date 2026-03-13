@@ -7855,9 +7855,15 @@ end
             return
         end
 
-        % Build full paths and filter out LFP-band streams (not useful for raw viewing)
+        % Build full paths and filter out LFP-band streams (not useful for raw/AP viewing).
+        % Open Ephys naming seen in this project includes both:
+        %   - stream names containing "LFP" (e.g., Neuropix-PXI-100.ProbeA-LFP)
+        %   - Neuropixels stream folders ending in ".1" for LFP (e.g., Neuropix-PXI-100.1)
         fullPaths = fullfile({hits.folder}, {hits.name});
-        isLFP = ~cellfun(@isempty, regexpi(fullPaths, 'ProbeA-LFP'));
+        streamFolders = cellfun(@fileparts, fullPaths, 'UniformOutput', false);
+        streamNames = regexp(streamFolders, '[^\\/]+$', 'match', 'once');
+        isLFP = contains(streamNames, 'LFP', 'IgnoreCase', true) | ...
+            ~cellfun(@isempty, regexp(streamNames, '\\.1$', 'once'));
         fullPaths = fullPaths(~isLFP);
         if isempty(fullPaths)
             return
