@@ -923,7 +923,7 @@ end
             end
             ephys.sr = data.session.extracellular.srLfp;
             fileID = UI.fid.lfp;
-        elseif UI.fid.ephys == -1 && UI.settings.plotStyle == 6
+        elseif UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo) && UI.settings.plotStyle == 6
             UI.settings.stream = false;
             ephys.loaded = false;
             return
@@ -931,7 +931,7 @@ end
             ephys.sr = data.session.extracellular.sr;
             fileID = UI.fid.ephys;
         else % dat file
-            if UI.fid.ephys == -1
+            if UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo)
                 UI.settings.stream = false;
                 ephys.loaded = false;
                 text_center('Failed to load raw data')
@@ -942,45 +942,70 @@ end
         end
         
         if strcmp(UI.settings.fileRead,'bof')
-            % Loading data
-            if UI.t0>UI.t1 && UI.t0 < UI.t1 + UI.settings.windowDuration && ~UI.forceNewData
-                t_offset = UI.t0-UI.t1;
-                newSamples = round(UI.samplesToDisplay*t_offset/UI.settings.windowDuration);
-                existingSamples = UI.samplesToDisplay-newSamples;
-                % Keeping existing samples
-                ephys.raw(1:existingSamples,:) = ephys.raw(newSamples+1:UI.samplesToDisplay,:);
-                % Loading new samples
-                fseek(fileID,round((UI.t0+UI.settings.windowDuration-t_offset)*ephys.sr)*data.session.extracellular.nChannels*2,'bof'); % bof: beginning of file
+            if ~isempty(UI.data.epochFileInfo) && UI.settings.plotStyle ~= 4
+                % Sub-epoch dat file mode: read seamlessly from individual epoch files
                 try
-                    ephys.raw(existingSamples+1:UI.samplesToDisplay,:) = double(fread(fileID, [data.session.extracellular.nChannels, newSamples],UI.settings.precision))'*UI.settings.leastSignificantBit;
+                    ephys.raw = readFromSubEpochFiles(UI.t0, UI.samplesToDisplay, ephys.sr);
                     ephys.loaded = true;
-                catch 
+                catch
                     UI.settings.stream = false;
-                    text_center('Failed to read file')
+                    text_center('Failed to read sub-epoch data')
                 end
-            elseif UI.t0 < UI.t1 && UI.t0 > UI.t1 - UI.settings.windowDuration && ~UI.forceNewData
-                t_offset = UI.t1-UI.t0;
-                newSamples = round(UI.samplesToDisplay*t_offset/UI.settings.windowDuration);
-                % Keeping existing samples
-                existingSamples = UI.samplesToDisplay-newSamples;
-                ephys.raw(newSamples+1:UI.samplesToDisplay,:) = ephys.raw(1:existingSamples,:);
-                % Loading new data
-                fseek(fileID,round(UI.t0*ephys.sr)*data.session.extracellular.nChannels*2,'bof');
-                ephys.raw(1:newSamples,:) = double(fread(fileID, [data.session.extracellular.nChannels, newSamples],UI.settings.precision))'*UI.settings.leastSignificantBit;
-                ephys.loaded = true;
-            elseif UI.t0==UI.t1 && ~UI.forceNewData
-                ephys.loaded = true;
+                UI.forceNewData = false;
             else
-                fseek(fileID,round(UI.t0*ephys.sr)*data.session.extracellular.nChannels*2,'bof');
+                % Loading data
+                if UI.t0>UI.t1 && UI.t0 < UI.t1 + UI.settings.windowDuration && ~UI.forceNewData
+                    t_offset = UI.t0-UI.t1;
+                    newSamples = round(UI.samplesToDisplay*t_offset/UI.settings.windowDuration);
+                    existingSamples = UI.samplesToDisplay-newSamples;
+                    % Keeping existing samples
+                    ephys.raw(1:existingSamples,:) = ephys.raw(newSamples+1:UI.samplesToDisplay,:);
+                    % Loading new samples
+                    fseek(fileID,round((UI.t0+UI.settings.windowDuration-t_offset)*ephys.sr)*data.session.extracellular.nChannels*2,'bof'); % bof: beginning of file
+                    try
+                        ephys.raw(existingSamples+1:UI.samplesToDisplay,:) = double(fread(fileID, [data.session.extracellular.nChannels, newSamples],UI.settings.precision))'*UI.settings.leastSignificantBit;
+                        ephys.loaded = true;
+                    catch 
+                        UI.settings.stream = false;
+                        text_center('Failed to read file')
+                    end
+                elseif UI.t0 < UI.t1 && UI.t0 > UI.t1 - UI.settings.windowDuration && ~UI.forceNewData
+                    t_offset = UI.t1-UI.t0;
+                    newSamples = round(UI.samplesToDisplay*t_offset/UI.settings.windowDuration);
+                    % Keeping existing samples
+                    existingSamples = UI.samplesToDisplay-newSamples;
+                    ephys.raw(newSamples+1:UI.samplesToDisplay,:) = ephys.raw(1:existingSamples,:);
+                    % Loading new data
+                    fseek(fileID,round(UI.t0*ephys.sr)*data.session.extracellular.nChannels*2,'bof');
+                    ephys.raw(1:newSamples,:) = double(fread(fileID, [data.session.extracellular.nChannels, newSamples],UI.settings.precision))'*UI.settings.leastSignificantBit;
+                    ephys.loaded = true;
+                elseif UI.t0==UI.t1 && ~UI.forceNewData
+                    ephys.loaded = true;
+                else
+                    fseek(fileID,round(UI.t0*ephys.sr)*data.session.extracellular.nChannels*2,'bof');
+                    ephys.raw = double(fread(fileID, [data.session.extracellular.nChannels, UI.samplesToDisplay],UI.settings.precision))'*UI.settings.leastSignificantBit;
+                    ephys.loaded = true;
+                end
+                UI.forceNewData = false;
+            end
+        else
+            if ~isempty(UI.data.epochFileInfo) && UI.settings.plotStyle ~= 4
+                % Sub-epoch mode: EOF streaming is not applicable; read from the end of the last epoch
+                tEnd = UI.data.epochFileInfo.stopTimes(end);
+                tStart = max(0, tEnd - UI.settings.windowDuration);
+                try
+                    ephys.raw = readFromSubEpochFiles(tStart, UI.samplesToDisplay, ephys.sr);
+                    ephys.loaded = true;
+                catch
+                    UI.settings.stream = false;
+                    text_center('Failed to read sub-epoch data')
+                end
+            else
+                fseek(fileID,ceil(-UI.settings.windowDuration*ephys.sr)*data.session.extracellular.nChannels*2,'eof'); % eof: end of file
                 ephys.raw = double(fread(fileID, [data.session.extracellular.nChannels, UI.samplesToDisplay],UI.settings.precision))'*UI.settings.leastSignificantBit;
                 ephys.loaded = true;
             end
-            UI.forceNewData = false;
-        else
-            fseek(fileID,ceil(-UI.settings.windowDuration*ephys.sr)*data.session.extracellular.nChannels*2,'eof'); % eof: end of file
-            ephys.raw = double(fread(fileID, [data.session.extracellular.nChannels, UI.samplesToDisplay],UI.settings.precision))'*UI.settings.leastSignificantBit;
             UI.forceNewData = true;
-            ephys.loaded = true;
         end
         ephys.nChannels = size(ephys.raw,2);
         ephys.nSamples = size(ephys.raw,1);
@@ -1052,7 +1077,7 @@ end
         % 5. Image: Raw data displayed with the imagesc function
         % Only data thas is not currently displayed will be loaded.
         
-        if UI.fid.ephys == -1 && UI.settings.plotStyle ~= 4
+        if UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo) && UI.settings.plotStyle ~= 4
             return 
         end
         
@@ -2426,7 +2451,7 @@ end
     end
     
     function plotRMSnoiseInset
-        if UI.fid.ephys == -1
+        if UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo)
             return 
         end
         
@@ -3213,7 +3238,7 @@ end
                 
                 UI.t0 = UI.t0+replayRefreshInterval*UI.settings.windowDuration;
                 UI.t0 = max([0,min([UI.t0,UI.t_total-UI.settings.windowDuration])]);
-                if ~ishandle(UI.fig) ||  (UI.fid.ephys == -1 && UI.settings.plotStyle ~= 4)
+                if ~ishandle(UI.fig) ||  (UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo) && UI.settings.plotStyle ~= 4)
                     return
                 end
                 
@@ -3372,7 +3397,7 @@ end
             for i = 1:n_frames
                 UI.t0 = UI.t0+UI.settings.windowDuration/parameters.framerate;
                 UI.t0 = max([0,min([UI.t0,UI.t_total-UI.settings.windowDuration])]);
-                if ~ishandle(UI.fig) ||  (UI.fid.ephys == -1 && UI.settings.plotStyle ~= 4) || ~UI.settings.stream
+                if ~ishandle(UI.fig) ||  (UI.fid.ephys == -1 && isempty(UI.data.epochFileInfo) && UI.settings.plotStyle ~= 4) || ~UI.settings.stream
                     UI.settings.stream = false;
                     return
                 end
@@ -5088,6 +5113,16 @@ end
         
         UI.track = true;
         UI.t_total = 0; % Length of the recording in seconds
+
+        % Close any open sub-epoch dat file handles before clearing the info struct
+        if isfield(UI,'data') && isfield(UI.data,'epochFileInfo') && ~isempty(UI.data.epochFileInfo) && isfield(UI.data.epochFileInfo,'fids')
+            for i_epoch = 1:numel(UI.data.epochFileInfo.fids)
+                if UI.data.epochFileInfo.fids(i_epoch) > 0
+                    fclose(UI.data.epochFileInfo.fids(i_epoch));
+                end
+            end
+        end
+        UI.data.epochFileInfo = []; % Struct for sub-epoch dat file info (populated when basename.dat is missing)
         
         % Restting UI and imported data
         UI.settings.showKilosort = false;
@@ -5263,17 +5298,34 @@ end
         if ~isempty(s1) && ~strcmp(UI.priority,'lfp')
             filesize = s1.bytes;
             UI.t_total = filesize/(data.session.extracellular.nChannels*data.session.extracellular.sr*2);
-        elseif ~isempty(s2)
-            filesize = s2.bytes;
-            UI.t_total = filesize/(data.session.extracellular.nChannels*data.session.extracellular.srLfp*2);
-            UI.settings.plotStyle = 4;
-            UI.panel.general.plotStyle.Value = UI.settings.plotStyle;
-        else
-            warning('NeuroScope2: Binary data does not exist')
+        elseif isempty(s1) && isfield(data.session,'epochs') && ~isempty(data.session.epochs)
+            % No merged .dat file - try individual sub-epoch dat files (raw, full sample rate)
+            UI.data.epochFileInfo = detectSubEpochDatFiles(basepath, data.session);
+            if ~isempty(UI.data.epochFileInfo)
+                UI.t_total = UI.data.epochFileInfo.stopTimes(end);
+                % If a previously saved LFP plot style is loaded from session.mat, override it
+                % because sub-epoch raw dat files are now available.
+                if UI.settings.plotStyle == 4 % LFP plot style
+                    UI.settings.plotStyle = 2; % Range plot style (dat-compatible)
+                    UI.panel.general.plotStyle.Value = UI.settings.plotStyle;
+                end
+            end
+        end
+        
+        % If neither a merged .dat nor sub-epoch dat files were found, fall back to LFP
+        if isempty(s1) && isempty(UI.data.epochFileInfo)
+            if ~isempty(s2)
+                filesize = s2.bytes;
+                UI.t_total = filesize/(data.session.extracellular.nChannels*data.session.extracellular.srLfp*2);
+                UI.settings.plotStyle = 4;
+                UI.panel.general.plotStyle.Value = UI.settings.plotStyle;
+            else
+                warning('NeuroScope2: Binary data does not exist')
+            end
         end
         
         % if no dat file, but lfp file, set fid ephys to fid lfp
-        if isempty(s1) && UI.fid.ephys == -1 && ~isempty(s2) && UI.fid.lfp ~= -1
+        if isempty(s1) && isempty(UI.data.epochFileInfo) && UI.fid.ephys == -1 && ~isempty(s2) && UI.fid.lfp ~= -1
             UI.fid.ephys = UI.fid.lfp;
         end
 
@@ -5417,6 +5469,9 @@ end
         if ~isempty(s1)
             filesize = s1.bytes;
             UI.t_total = filesize/(data.session.extracellular.nChannels*data.session.extracellular.sr*2);
+        elseif ~isempty(UI.data.epochFileInfo)
+            % Sub-epoch mode: total duration is the stop time of the last epoch
+            UI.t_total = UI.data.epochFileInfo.stopTimes(end);
         elseif ~isempty(s2)
             filesize = s2.bytes;
             UI.t_total = filesize/(data.session.extracellular.nChannels*data.session.extracellular.srLfp*2);
@@ -7653,4 +7708,275 @@ end
             end
         end
     end
+
+    function epochFileInfo = detectSubEpochDatFiles(basepath, session)
+        % detectSubEpochDatFiles: Finds individual .dat files for sub-epochs
+        % when the merged basename.dat does not exist.
+        %
+        % Supports both Intan (flat) and Open Ephys (nested) recording formats.
+        % For each epoch the function searches in this order:
+        %
+        %   Intan (flat layout):
+        %     1. basepath/epoch_name/epoch_name.dat
+        %     2. basepath/epoch_name/amplifier.dat
+        %     3. parent_dir/epoch_name/epoch_name.dat
+        %     4. parent_dir/epoch_name/amplifier.dat
+        %
+        %   Open Ephys (nested layout -- any combination of streams):
+        %     5. Recursively searches basepath/epoch_name/ for continuous.dat
+        %        following the Open Ephys binary tree:
+        %        <epoch>/<Record Node N>/<experimentN>/<recordingN>/continuous/<stream>/continuous.dat
+        %        Stream priority: Acquisition_Board (Intan Rhythm) > ProbeA-AP
+        %        (Neuropixels AP) > ProbeA > first continuous.dat found
+        %     6. Same recursive search under parent_dir/epoch_name/
+
+        epochFileInfo = [];
+        if ~isfield(session,'epochs') || isempty(session.epochs)
+            return
+        end
+
+        nEpochs = numel(session.epochs);
+        fileNames = cell(1, nEpochs);
+        startTimes = zeros(1, nEpochs);
+        stopTimes = zeros(1, nEpochs);
+        fids = zeros(1, nEpochs);
+
+        parent_dir = fileparts(basepath);
+        sr = session.extracellular.sr;
+        nChannels = session.extracellular.nChannels;
+
+        found_any = false;
+        lastStopTime = 0; % Tracks the end of the last successfully processed epoch (for fallback timing)
+        for i = 1:nEpochs
+            epoch = session.epochs{i};
+            if ~isfield(epoch,'name') || isempty(epoch.name)
+                continue
+            end
+            epochName = epoch.name;
+
+            % --- Intan flat candidates ---
+            candidates = {
+                fullfile(basepath, epochName, [epochName, '.dat']);
+                fullfile(basepath, epochName, 'amplifier.dat');
+                fullfile(parent_dir, epochName, [epochName, '.dat']);
+                fullfile(parent_dir, epochName, 'amplifier.dat');
+            };
+
+            foundFile = '';
+            for j = 1:numel(candidates)
+                if exist(candidates{j},'file')
+                    foundFile = candidates{j};
+                    break
+                end
+            end
+
+            % --- Open Ephys nested search (if flat candidates not found) ---
+            if isempty(foundFile)
+                for searchRoot = {fullfile(basepath, epochName), fullfile(parent_dir, epochName)}
+                    if exist(searchRoot{1}, 'dir')
+                        foundFile = findOpenEphysContinuousDat(searchRoot{1});
+                        if ~isempty(foundFile)
+                            break
+                        end
+                    end
+                end
+            end
+
+            if isempty(foundFile)
+                continue
+            end
+
+            fileNames{i} = foundFile;
+            fid = fopen(foundFile, 'r');
+            if fid == -1
+                warning('NeuroScope2: Could not open sub-epoch dat file: %s', foundFile);
+                fileNames{i} = '';
+                continue
+            end
+            fids(i) = fid;
+
+            % Use session epoch times if available and non-empty; otherwise compute from file size
+            if isfield(epoch,'startTime') && isfield(epoch,'stopTime') && ~isempty(epoch.startTime) && ~isempty(epoch.stopTime)
+                startTimes(i) = epoch.startTime;
+                stopTimes(i) = epoch.stopTime;
+                lastStopTime = epoch.stopTime;
+            else
+                s = dir(foundFile);
+                duration = s.bytes / (nChannels * sr * 2);
+                startTimes(i) = lastStopTime;
+                stopTimes(i) = lastStopTime + duration;
+                lastStopTime = stopTimes(i);
+            end
+            found_any = true;
+        end
+
+        if ~found_any
+            % Close any fids opened during the search
+            for i = 1:nEpochs
+                if fids(i) > 0
+                    fclose(fids(i));
+                end
+            end
+            return
+        end
+
+        % Only keep epochs for which a file was found, sorted by start time
+        % (readFromSubEpochFiles assumes monotonically ordered epochs)
+        validIdxNums = find(~cellfun(@isempty, fileNames));
+        [~, sortOrder] = sort(startTimes(validIdxNums));
+        sortedIdx = validIdxNums(sortOrder);
+
+        epochFileInfo.nEpochs    = numel(sortedIdx);
+        epochFileInfo.startTimes = startTimes(sortedIdx);
+        epochFileInfo.stopTimes  = stopTimes(sortedIdx);
+        epochFileInfo.fileNames  = fileNames(sortedIdx);
+        epochFileInfo.fids       = fids(sortedIdx);
+    end
+
+    function foundFile = findOpenEphysContinuousDat(epochDir)
+        % findOpenEphysContinuousDat  Locate the primary continuous.dat file within
+        % an Open Ephys recording tree rooted at epochDir.
+        %
+        % Open Ephys binary format nests data as:
+        %   <epochDir>/Record Node <N>/experiment<N>/recording<N>/continuous/<stream>/continuous.dat
+        %
+        % Stream-name priority (highest first):
+        %   1. Acquisition_Board-*.Rhythm Data  (Intan Rhythm board via Open Ephys)
+        %   2. Neuropix-PXI-*.ProbeA-AP         (Neuropixels AP band, new naming)
+        %   3. Neuropix-PXI-*.0                 (Neuropixels stream ending in .0, AP band in older naming)
+        %   4. Any ProbeA stream
+        %   5. First non-LFP continuous.dat     (fallback for any other stream)
+
+        foundFile = '';
+
+        % Recursively find all continuous.dat files under epochDir
+        hits = dir(fullfile(epochDir, '**', 'continuous.dat'));
+        if isempty(hits)
+            return
+        end
+
+        % Build full paths and filter out LFP-band streams (not useful for raw/AP viewing).
+        % Open Ephys naming seen in this project includes both:
+        %   - stream names containing "LFP" (e.g., Neuropix-PXI-100.ProbeA-LFP)
+        %   - Neuropixels stream folders ending in ".1" for LFP (e.g., Neuropix-PXI-100.1)
+        fullPaths = fullfile({hits.folder}, {hits.name});
+        streamFolders = cellfun(@fileparts, fullPaths, 'UniformOutput', false);
+        streamNames = regexp(streamFolders, '[^\\/]+$', 'match', 'once');
+        isLFP = contains(streamNames, 'LFP', 'IgnoreCase', true) | ...
+            ~cellfun(@isempty, regexp(streamNames, '\\.1$', 'once'));
+        fullPaths = fullPaths(~isLFP);
+        if isempty(fullPaths)
+            return
+        end
+
+        % Priority 1: Intan Rhythm Data board (Acquisition_Board-*)
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Acquisition_Board.*Rhythm')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 2: Neuropixels AP band -- new naming (ProbeA-AP)
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'ProbeA-AP')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 3: Neuropixels AP band -- older naming (stream folder ends in '.0')
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Neuropix.*\.0')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 4: Any ProbeA stream
+        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'ProbeA')), 1, 'first');
+        if ~isempty(idx)
+            foundFile = fullPaths{idx};
+            return
+        end
+
+        % Priority 5: First remaining continuous.dat
+        foundFile = fullPaths{1};
+    end
+
+    function raw = readFromSubEpochFiles(t0, nSamples, sr)
+        % readFromSubEpochFiles: Reads nSamples starting at t0 from sub-epoch dat files.
+        % Handles windows that span multiple epoch boundaries seamlessly.
+
+        nChannels = data.session.extracellular.nChannels;
+        precision = UI.settings.precision;
+        lsb = UI.settings.leastSignificantBit;
+        efi = UI.data.epochFileInfo;
+
+        nSamples = round(nSamples); % Ensure integer sample count
+
+        raw = zeros(nSamples, nChannels);
+        samplesRemaining = nSamples;
+        tCurrent = t0;
+        sampleIdx = 1;
+
+        while samplesRemaining > 0
+            % Find which epoch contains the current time position
+            epochIdx = find(efi.startTimes <= tCurrent & efi.stopTimes > tCurrent, 1, 'first');
+
+            if isempty(epochIdx)
+                % tCurrent is not contained in any epoch (floating-point boundary
+                % imprecision or a genuine recording gap between epochs).
+                % Find the next epoch that starts after tCurrent.
+                nextIdx = find(efi.startTimes > tCurrent, 1, 'first');
+                if isempty(nextIdx)
+                    % No subsequent epochs – zero-pad the rest of the window.
+                    break
+                end
+                % Skip over the gap (already zero-initialised) and resume at the
+                % start of the next epoch.  Works for tiny float gaps (gapSamples=0)
+                % and genuine multi-second gaps alike.
+                gapSamples = max(0, round((efi.startTimes(nextIdx) - tCurrent) * sr));
+                if gapSamples >= samplesRemaining
+                    % Gap extends to or beyond the end of the window.
+                    break
+                end
+                sampleIdx = sampleIdx + gapSamples;
+                samplesRemaining = samplesRemaining - gapSamples;
+                tCurrent = efi.startTimes(nextIdx);
+                continue
+            end
+
+            fid = efi.fids(epochIdx);
+            epochStart = efi.startTimes(epochIdx);
+            epochStop = efi.stopTimes(epochIdx);
+
+            % Byte offset from the beginning of this epoch file
+            tOffset = tCurrent - epochStart;
+            byteOffset = round(tOffset * sr) * nChannels * 2;
+            fseek(fid, byteOffset, 'bof');
+
+            % How many samples remain in this epoch from the current position?
+            samplesInEpoch = round((epochStop - tCurrent) * sr);
+            samplesToRead = min(samplesRemaining, samplesInEpoch);
+
+            if samplesToRead <= 0
+                % Floating-point imprecision can leave tCurrent just below epochStop
+                % with zero samples remaining in this epoch. Advance to the epoch
+                % boundary so the next iteration picks up the following epoch.
+                tCurrent = epochStop;
+                continue
+            end
+
+            chunk = double(fread(fid, [nChannels, samplesToRead], precision))' * lsb;
+            actualRead = size(chunk, 1);
+
+            if actualRead > 0
+                raw(sampleIdx:sampleIdx+actualRead-1, :) = chunk;
+                sampleIdx = sampleIdx + actualRead;
+                samplesRemaining = samplesRemaining - actualRead;
+                tCurrent = tCurrent + actualRead / sr;
+            else
+                break
+            end
+        end
+    end
+
 end
