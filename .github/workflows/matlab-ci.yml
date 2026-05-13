@@ -23,6 +23,7 @@ jobs:
           products: >
             Signal_Processing_Toolbox
             Curve_Fitting_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
 
       - name: Run getWaveformsFromDat mergepoints test
         uses: matlab-actions/run-command@v2
