@@ -119,14 +119,7 @@ wfWin = round((wfWin_sec * sr)/2);
 window_interval = wfWin-ceil(wfWinKeep*sr):wfWin-1+ceil(wfWinKeep*sr); % +- 0.8 ms of waveform
 window_interval2 = wfWin-ceil(1.5*wfWinKeep*sr):wfWin-1+ceil(1.5*wfWinKeep*sr); % +- 1.20 ms of waveform
 t1 = toc(timerVal);
-if ~exist(datFile,'file')
-    error(['Binary file missing: ', datFile])
-end
-s = dir(datFile);
-
-duration = s.bytes/(2*nChannels*sr);
-rawData = memmapfile(datFile,'Format',precision,'writable',false);
-% DATA = rawData.Data;
+[waveformSource,duration,waveformSourceLabel] = initializeWaveformSource(datFile,basepath,basename,nChannels,sr,precision);
 
 % Fit exponential
 g = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
@@ -167,10 +160,27 @@ for i = 1:length(params.unitsToProcess)
 %     end
     
     % Pulls the waveforms from all channels from the dat
-    startIndicies2 = (spkTmp - wfWin)*nChannels+1;
-    stopIndicies2 = (spkTmp + wfWin)*nChannels;
-    X2 = cumsum(accumarray(cumsum([1;stopIndicies2(:)-startIndicies2(:)+1]),[startIndicies2(:);0]-[0;stopIndicies2(:)]-1)+1);
-    wf = LSB * permute(reshape(double(rawData.Data(X2(1:end-1))),nChannels,(wfWin*2),[]),[2,3,1]);
+    [wf, spkTmp] = extractWaveformsFromSource(spkTmp,wfWin,nChannels,LSB,waveformSource);
+    if isempty(spkTmp)
+        warning('No spikes remained for waveform extraction for unit %d after applying file-boundary constraints.',ii)
+        spikes.rawWaveform{ii} = nan(1,length(window_interval));
+        spikes.rawWaveform_std{ii} = nan(1,length(window_interval));
+        spikes.filtWaveform{ii} = nan(1,length(window_interval));
+        spikes.filtWaveform_std{ii} = nan(1,length(window_interval));
+        spikes.rawWaveform_all{ii} = nan(nChannels,length(window_interval2));
+        spikes.filtWaveform_all{ii} = nan(nChannels,length(window_interval2));
+        spikes.timeWaveform{ii} = ([-ceil(wfWinKeep*sr)*(1/sr):1/sr:(ceil(wfWinKeep*sr)-1)*(1/sr)])*1000;
+        spikes.timeWaveform_all{ii} = ([-ceil(1.5*wfWinKeep*sr)*(1/sr):1/sr:(ceil(1.5*wfWinKeep*sr)-1)*(1/sr)])*1000;
+        spikes.peakVoltage(ii) = nan;
+        spikes.channels_all{ii} = 1:nChannels;
+        spikes.peakVoltage_sorted{ii} = nan(1,nChannels);
+        spikes.maxWaveform_all{ii} = nan(1,nChannels);
+        spikes.maxWaveformCh1(ii) = nan;
+        spikes.maxWaveformCh(ii) = nan;
+        spikes.shankID(ii) = nan;
+        spikes.peakVoltage_expFitLengthConstant(ii) = nan;
+        continue
+    end
     wfF = zeros((wfWin * 2),length(spkTmp),nChannels);
     for jjj = 1 : nChannels
         wfF(:,:,jjj) = filtfilt(b1, a1, wf(:,:,jjj));
@@ -287,21 +297,19 @@ for i = 1:length(params.unitsToProcess)
         disp('Canceling waveform extraction...')
         clear wf wfF wf2 wfF2
         clear rawWaveform rawWaveform_std filtWaveform filtWaveform_std
-        clear rawData
         error('Waveform extraction canceled by user by closing figure window.')
         end
     end
     clear wf wfF wf2 wfF2
 end
 
-spikes.processinginfo.params.WaveformsSource = 'dat file';
+spikes.processinginfo.params.WaveformsSource = waveformSourceLabel;
 spikes.processinginfo.params.WaveformsFiltFreq = params.filtFreq;
 spikes.processinginfo.params.Waveforms_nPull = params.nPull;
 spikes.processinginfo.params.WaveformsWin_sec = wfWin_sec;
 spikes.processinginfo.params.WaveformsWinKeep = wfWinKeep;
 spikes.processinginfo.params.WaveformsFilterType = 'butter';
 clear rawWaveform rawWaveform_std filtWaveform filtWaveform_std
-clear rawData
 
 % Plots
 if params.showWaveforms && ishandle(fig1)
@@ -315,4 +323,129 @@ if params.showWaveforms && ishandle(fig1)
     end
 end
 disp(['Waveform extraction complete. Total duration: ' num2str(round(toc(timerVal)/60)),' minutes'])
+end
+
+function [waveformSource,duration,waveformSourceLabel] = initializeWaveformSource(datFile,basepath,basename,nChannels,sr,precision)
+sampleBytes = getPrecisionBytes(precision);
+
+if exist(datFile,'file')
+    s = dir(datFile);
+    waveformSource.mode = 'single';
+    waveformSource.datFile = datFile;
+    waveformSource.precision = precision;
+    duration = s.bytes/(sampleBytes*nChannels*sr);
+    waveformSourceLabel = 'dat file';
+    return
+end
+
+mergePointsFile = fullfile(basepath,[basename,'.MergePoints.events.mat']);
+if ~exist(mergePointsFile,'file')
+    error(['Binary file missing: ', datFile, newline, 'MergePoints file missing: ', mergePointsFile])
+end
+
+mergeData = load(mergePointsFile,'MergePoints');
+if ~isfield(mergeData,'MergePoints')
+    error('MergePoints file is missing the MergePoints struct: %s',mergePointsFile)
+end
+
+MergePoints = mergeData.MergePoints;
+if ~isfield(MergePoints,'timestamps_samples') || ~isfield(MergePoints,'foldernames')
+    error('MergePoints file is missing timestamps_samples or foldernames: %s',mergePointsFile)
+end
+
+starts = double(MergePoints.timestamps_samples(:,1));
+stops = double(MergePoints.timestamps_samples(:,2));
+foldernames = MergePoints.foldernames;
+if isstring(foldernames)
+    foldernames = cellstr(foldernames);
+end
+
+if numel(foldernames) ~= numel(starts)
+    error('Mismatch between MergePoints foldernames and timestamps_samples in %s',mergePointsFile)
+end
+
+segments = repmat(struct('foldername','','datFile','','startSample',0,'endSample',0,'nSamples',0),1,numel(foldernames));
+for i = 1:numel(foldernames)
+    foldername = foldernames{i};
+    datPath = fullfile(basepath,foldername,'amplifier.dat');
+    if ~exist(datPath,'file')
+        error('Expected amplifier.dat for MergePoints segment is missing: %s',datPath)
+    end
+    fileInfo = dir(datPath);
+    nSamples = fileInfo.bytes/(sampleBytes*nChannels);
+    expectedSamples = stops(i) - starts(i);
+    if nSamples ~= expectedSamples
+        error('Sample count mismatch for %s (MergePoints=%d, amplifier.dat=%d).',datPath,expectedSamples,nSamples)
+    end
+    segments(i).foldername = foldername;
+    segments(i).datFile = datPath;
+    segments(i).startSample = starts(i);
+    segments(i).endSample = stops(i);
+    segments(i).nSamples = nSamples;
+end
+
+waveformSource.mode = 'mergepoints';
+waveformSource.segments = segments;
+waveformSource.precision = precision;
+duration = stops(end)/sr;
+waveformSourceLabel = 'MergePoints amplifier.dat files';
+end
+
+function [wf, spkTmp] = extractWaveformsFromSource(spkTmp,wfWin,nChannels,LSB,waveformSource)
+switch waveformSource.mode
+    case 'single'
+        wf = readWaveformsFromFile(waveformSource.datFile,spkTmp,wfWin,nChannels,LSB,waveformSource.precision);
+    case 'mergepoints'
+        [spkTmp,segmentIds] = filterSpikesForSegments(spkTmp,wfWin,waveformSource.segments);
+        if isempty(spkTmp)
+            wf = [];
+            return
+        end
+        wf = zeros(wfWin*2,length(spkTmp),nChannels);
+        uniqueSegments = unique(segmentIds);
+        for iSegment = uniqueSegments(:)'
+            idx = find(segmentIds == iSegment);
+            localSpikes = spkTmp(idx) - waveformSource.segments(iSegment).startSample;
+            wf(:,idx,:) = readWaveformsFromFile(waveformSource.segments(iSegment).datFile,localSpikes,wfWin,nChannels,LSB,waveformSource.precision);
+        end
+    otherwise
+        error('Unknown waveform source mode: %s',waveformSource.mode)
+end
+end
+
+function [spkTmpValid,segmentIds] = filterSpikesForSegments(spkTmp,wfWin,segments)
+spkTmpValid = [];
+segmentIds = [];
+for i = 1:numel(segments)
+    inSegment = spkTmp > (segments(i).startSample + wfWin) & spkTmp <= (segments(i).endSample - wfWin);
+    if any(inSegment)
+        spkTmpValid = [spkTmpValid; spkTmp(inSegment)]; %#ok<AGROW>
+        segmentIds = [segmentIds; repmat(i,sum(inSegment),1)]; %#ok<AGROW>
+    end
+end
+[spkTmpValid,order] = sort(spkTmpValid);
+segmentIds = segmentIds(order);
+end
+
+function wf = readWaveformsFromFile(datFile,spkTmp,wfWin,nChannels,LSB,precision)
+rawData = memmapfile(datFile,'Format',precision,'writable',false);
+startIndicies = (spkTmp - wfWin)*nChannels+1;
+stopIndicies = (spkTmp + wfWin)*nChannels;
+X = cumsum(accumarray(cumsum([1;stopIndicies(:)-startIndicies(:)+1]),[startIndicies(:);0]-[0;stopIndicies(:)]-1)+1);
+wf = LSB * permute(reshape(double(rawData.Data(X(1:end-1))),nChannels,(wfWin*2),[]),[2,3,1]);
+end
+
+function sampleBytes = getPrecisionBytes(precision)
+switch lower(precision)
+    case {'int16','uint16'}
+        sampleBytes = 2;
+    case {'int32','uint32','single','float32'}
+        sampleBytes = 4;
+    case {'int64','uint64','double','float64'}
+        sampleBytes = 8;
+    case {'int8','uint8','char'}
+        sampleBytes = 1;
+    otherwise
+        error('Unsupported extracellular precision: %s',precision)
+end
 end
