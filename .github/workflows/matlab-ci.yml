@@ -10,6 +10,8 @@ on:
 jobs:
   test-getwaveforms-mergepoints:
     runs-on: ubuntu-latest
+    env:
+      MLM_LICENSE_TOKEN: ${{ secrets.MLM_LICENSE_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -19,5 +21,6 @@ jobs:
         uses: matlab-actions/setup-matlab@v2
 
       - name: Run getWaveformsFromDat mergepoints test
-        run: |
-          matlab -batch "addpath(genpath(pwd)); results = runtests('tests/test_getWaveformsFromDat_mergepoints.m'); assertSuccess(results);"
+        uses: matlab-actions/run-command@v2
+        with:
+          command: addpath(genpath(pwd)); results = runtests('tests/test_getWaveformsFromDat_mergepoints.m'); assertSuccess(results);
