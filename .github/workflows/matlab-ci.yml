@@ -1,0 +1,23 @@
+name: MATLAB CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  test-getwaveforms-mergepoints:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+
+      - name: Run getWaveformsFromDat mergepoints test
+        run: |
+          matlab -batch "addpath(genpath(pwd)); results = runtests('tests/test_getWaveformsFromDat_mergepoints.m'); assertSuccess(results);"
