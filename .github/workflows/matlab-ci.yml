@@ -19,6 +19,10 @@ jobs:
 
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
+        with:
+          products: >
+            Signal_Processing_Toolbox
+            Curve_Fitting_Toolbox
 
       - name: Run getWaveformsFromDat mergepoints test
         uses: matlab-actions/run-command@v2
