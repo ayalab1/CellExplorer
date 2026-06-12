@@ -48,6 +48,46 @@ verifyFalse(testCase, any(abs(fallbackSpikes.waveforms.times{3} - fixtureData.bo
 verifyFalse(testCase, any(abs(fallbackSpikes.waveforms.times{3} - fixtureData.boundarySpikeSec(2)) < 1e-12));
 end
 
+function testOpenEphysFallbackDropsTrailingAdcChannels(testCase)
+repoRoot = fileparts(fileparts(mfilename('fullpath')));
+addpath(genpath(repoRoot));
+
+fixtureData = generate_getWaveformsFromDat_fixture('outputRoot', tempname);
+cleanupObj = onCleanup(@() cleanup_fixture(fixtureData.basepath)); %#ok<NASGU>
+
+directSpikes = run_waveform_extraction(fixtureData.spikes, fixtureData.session);
+
+datFile = fullfile(fixtureData.basepath, [fixtureData.basename, '.dat']);
+backupDatFile = [datFile, '.bak'];
+movefile(datFile, backupDatFile);
+restoreDatObj = onCleanup(@() restore_dat(datFile, backupDatFile)); %#ok<NASGU>
+
+amplifierFiles = {
+    fullfile(fixtureData.basepath, 'subfolder_01', 'amplifier.dat'), ...
+    fullfile(fixtureData.basepath, 'subfolder_02', 'amplifier.dat')};
+backupAmplifierFiles = move_files_to_backup(amplifierFiles);
+restoreAmplifierObj = onCleanup(@() restore_files_from_backup(amplifierFiles, backupAmplifierFiles)); %#ok<NASGU>
+
+fallbackSpikes = run_waveform_extraction(fixtureData.spikes, fixtureData.session);
+
+verifyEqual(testCase, fallbackSpikes.processinginfo.params.WaveformsSource, 'MergePoints Open Ephys continuous.dat files');
+verifyEqual(testCase, directSpikes.cluID, fallbackSpikes.cluID);
+
+for iUnit = 1:numel(fixtureData.spikes.times)
+    verifyEqual(testCase, fallbackSpikes.channels_all{iUnit}, 1:fixtureData.session.extracellular.nChannels);
+    verifyEqual(testCase, fallbackSpikes.maxWaveformCh1(iUnit), fixtureData.expectedPeakChannels(iUnit));
+
+    directSafe = restrict_times_to_intervals(directSpikes.waveforms.times{iUnit}, fixtureData.safeIntervalsSec);
+    fallbackSafe = restrict_times_to_intervals(fallbackSpikes.waveforms.times{iUnit}, fixtureData.safeIntervalsSec);
+    verifyEqual(testCase, directSafe(:), fallbackSafe(:), 'AbsTol', 1e-12);
+
+    if iUnit <= 2
+        verifyEqual(testCase, directSpikes.rawWaveform{iUnit}, fallbackSpikes.rawWaveform{iUnit}, 'AbsTol', 1e-9);
+        verifyEqual(testCase, directSpikes.filtWaveform{iUnit}, fallbackSpikes.filtWaveform{iUnit}, 'AbsTol', 1e-9);
+    end
+end
+end
+
 function spikesOut = run_waveform_extraction(spikesIn, session)
 rng(1);
 spikesOut = getWaveformsFromDat( ...
@@ -69,6 +109,24 @@ end
 function restore_dat(datFile, backupDatFile)
 if exist(backupDatFile, 'file') == 2 && exist(datFile, 'file') ~= 2
     movefile(backupDatFile, datFile);
+end
+end
+
+function backupFiles = move_files_to_backup(files)
+backupFiles = cell(size(files));
+for i = 1:numel(files)
+    backupFiles{i} = [files{i}, '.bak'];
+    if exist(files{i}, 'file') == 2
+        movefile(files{i}, backupFiles{i});
+    end
+end
+end
+
+function restore_files_from_backup(files, backupFiles)
+for i = 1:numel(files)
+    if exist(backupFiles{i}, 'file') == 2 && exist(files{i}, 'file') ~= 2
+        movefile(backupFiles{i}, files{i});
+    end
 end
 end
 

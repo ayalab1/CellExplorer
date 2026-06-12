@@ -364,37 +364,61 @@ if numel(foldernames) ~= numel(starts)
     error('Mismatch between MergePoints foldernames and timestamps_samples in %s',mergePointsFile)
 end
 
-segments = repmat(struct('foldername','','datFile','','startSample',0,'endSample',0,'nSamples',0),1,numel(foldernames));
+segments = repmat(struct('foldername','','datFile','','startSample',0,'endSample',0,'nSamples',0,'fileNChannels',0,'dataChannels',[],'excludedChannels',[],'sourceType',''),1,numel(foldernames));
 for i = 1:numel(foldernames)
     foldername = foldernames{i};
     datPath = fullfile(basepath,foldername,'amplifier.dat');
     if ~exist(datPath,'file')
-        error('Expected amplifier.dat for MergePoints segment is missing: %s',datPath)
+        datPath = findOpenEphysContinuousDat(fullfile(basepath,foldername));
+        if isempty(datPath)
+            error('Expected amplifier.dat or Open Ephys continuous.dat for MergePoints segment is missing: %s',fullfile(basepath,foldername))
+        end
+        sourceType = 'Open Ephys continuous.dat';
+    else
+        sourceType = 'amplifier.dat';
     end
     fileInfo = dir(datPath);
-    nSamples = fileInfo.bytes/(sampleBytes*nChannels);
     expectedSamples = stops(i) - starts(i);
-    if nSamples ~= expectedSamples
-        error('Sample count mismatch for %s (MergePoints=%d, amplifier.dat=%d).',datPath,expectedSamples,nSamples)
+    if expectedSamples <= 0
+        error('Invalid MergePoints sample range for %s: start=%d, stop=%d.',foldername,starts(i),stops(i))
+    end
+    fileNChannels = fileInfo.bytes/(sampleBytes*expectedSamples);
+    if abs(fileNChannels - round(fileNChannels)) > 1e-9
+        error('Could not infer an integer channel count for %s from MergePoints samples (%d) and file size (%d bytes).',datPath,expectedSamples,fileInfo.bytes)
+    end
+    fileNChannels = round(fileNChannels);
+    if fileNChannels < nChannels
+        error('Channel count mismatch for %s: file has %d channels but session expects %d.',datPath,fileNChannels,nChannels)
     end
     segments(i).foldername = foldername;
     segments(i).datFile = datPath;
     segments(i).startSample = starts(i);
     segments(i).endSample = stops(i);
-    segments(i).nSamples = nSamples;
+    segments(i).nSamples = expectedSamples;
+    segments(i).fileNChannels = fileNChannels;
+    segments(i).dataChannels = 1:nChannels;
+    segments(i).excludedChannels = nChannels+1:fileNChannels;
+    segments(i).sourceType = sourceType;
 end
 
 waveformSource.mode = 'mergepoints';
 waveformSource.segments = segments;
 waveformSource.precision = precision;
 duration = stops(end)/sr;
-waveformSourceLabel = 'MergePoints amplifier.dat files';
+sourceTypes = unique({segments.sourceType});
+if numel(sourceTypes) == 1 && strcmp(sourceTypes{1},'amplifier.dat')
+    waveformSourceLabel = 'MergePoints amplifier.dat files';
+elseif numel(sourceTypes) == 1 && strcmp(sourceTypes{1},'Open Ephys continuous.dat')
+    waveformSourceLabel = 'MergePoints Open Ephys continuous.dat files';
+else
+    waveformSourceLabel = 'MergePoints mixed binary files';
+end
 end
 
 function [wf, spkTmp] = extractWaveformsFromSource(spkTmp,wfWin,nChannels,LSB,waveformSource)
 switch waveformSource.mode
     case 'single'
-        wf = readWaveformsFromFile(waveformSource.datFile,spkTmp,wfWin,nChannels,LSB,waveformSource.precision);
+        wf = readWaveformsFromFile(waveformSource.datFile,spkTmp,wfWin,nChannels,1:nChannels,LSB,waveformSource.precision);
     case 'mergepoints'
         [spkTmp,segmentIds] = filterSpikesForSegments(spkTmp,wfWin,waveformSource.segments);
         if isempty(spkTmp)
@@ -406,7 +430,7 @@ switch waveformSource.mode
         for iSegment = uniqueSegments(:)'
             idx = find(segmentIds == iSegment);
             localSpikes = spkTmp(idx) - waveformSource.segments(iSegment).startSample;
-            wf(:,idx,:) = readWaveformsFromFile(waveformSource.segments(iSegment).datFile,localSpikes,wfWin,nChannels,LSB,waveformSource.precision);
+            wf(:,idx,:) = readWaveformsFromFile(waveformSource.segments(iSegment).datFile,localSpikes,wfWin,waveformSource.segments(iSegment).fileNChannels,waveformSource.segments(iSegment).dataChannels,LSB,waveformSource.precision);
         end
     otherwise
         error('Unknown waveform source mode: %s',waveformSource.mode)
@@ -427,12 +451,61 @@ end
 segmentIds = segmentIds(order);
 end
 
-function wf = readWaveformsFromFile(datFile,spkTmp,wfWin,nChannels,LSB,precision)
+function wf = readWaveformsFromFile(datFile,spkTmp,wfWin,fileNChannels,dataChannels,LSB,precision)
 rawData = memmapfile(datFile,'Format',precision,'writable',false);
-startIndicies = (spkTmp - wfWin)*nChannels+1;
-stopIndicies = (spkTmp + wfWin)*nChannels;
+startIndicies = (spkTmp - wfWin)*fileNChannels+1;
+stopIndicies = (spkTmp + wfWin)*fileNChannels;
 X = cumsum(accumarray(cumsum([1;stopIndicies(:)-startIndicies(:)+1]),[startIndicies(:);0]-[0;stopIndicies(:)]-1)+1);
-wf = LSB * permute(reshape(double(rawData.Data(X(1:end-1))),nChannels,(wfWin*2),[]),[2,3,1]);
+wf = LSB * permute(reshape(double(rawData.Data(X(1:end-1))),fileNChannels,(wfWin*2),[]),[2,3,1]);
+wf = wf(:,:,dataChannels);
+end
+
+function foundFile = findOpenEphysContinuousDat(epochDir)
+foundFile = '';
+if ~exist(epochDir,'dir')
+    return
+end
+
+hits = dir(fullfile(epochDir,'**','continuous.dat'));
+if isempty(hits)
+    return
+end
+
+fullPaths = fullfile({hits.folder},{hits.name});
+streamFolders = cellfun(@fileparts,fullPaths,'UniformOutput',false);
+streamNames = regexp(streamFolders,'[^\\/]+$','match','once');
+isLFP = contains(streamNames,'LFP','IgnoreCase',true) | ~cellfun(@isempty,regexp(streamNames,'\.1$','once'));
+isMemory = contains(streamNames,'memory_usage','IgnoreCase',true);
+fullPaths = fullPaths(~isLFP & ~isMemory);
+if isempty(fullPaths)
+    return
+end
+
+idx = find(contains(fullPaths,'acquisition_board','IgnoreCase',true),1,'first');
+if ~isempty(idx)
+    foundFile = fullPaths{idx};
+    return
+end
+
+idx = find(~cellfun(@isempty,regexpi(fullPaths,'ProbeA-AP')),1,'first');
+if ~isempty(idx)
+    foundFile = fullPaths{idx};
+    return
+end
+
+idx = find(~cellfun(@isempty,regexpi(fullPaths,'Neuropix.*\.0')),1,'first');
+if ~isempty(idx)
+    foundFile = fullPaths{idx};
+    return
+end
+
+idx = find(~cellfun(@isempty,regexpi(fullPaths,'ProbeA')),1,'first');
+if ~isempty(idx)
+    foundFile = fullPaths{idx};
+    return
+end
+
+foundFile = fullPaths{1};
 end
 
 function sampleBytes = getPrecisionBytes(precision)
