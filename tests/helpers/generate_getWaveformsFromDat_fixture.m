@@ -6,6 +6,8 @@ function fixtureData = generate_getWaveformsFromDat_fixture(varargin)
 %   basename.dat
 %   subfolder_01/amplifier.dat
 %   subfolder_02/amplifier.dat
+%   subfolder_01/.../Acquisition_Board-100.acquisition_board/continuous.dat
+%   subfolder_02/.../Acquisition_Board-100.acquisition_board/continuous.dat
 %   basename.MergePoints.events.mat
 %
 % Example:
@@ -59,6 +61,8 @@ segment2 = rawData(segmentSamples + 1:end, :);
 write_binary(fullfile(outputRoot, [basename, '.dat']), rawData);
 write_binary(fullfile(outputRoot, 'subfolder_01', 'amplifier.dat'), segment1);
 write_binary(fullfile(outputRoot, 'subfolder_02', 'amplifier.dat'), segment2);
+write_open_ephys_continuous(outputRoot, 'subfolder_01', segment1);
+write_open_ephys_continuous(outputRoot, 'subfolder_02', segment2);
 
 MergePoints = struct();
 MergePoints.timestamps_samples = [
@@ -119,6 +123,20 @@ spikePlan = struct('timesSec', {});
 spikePlan(1).timesSec = [1.0, 2.0, 3.5, 4.0];
 spikePlan(2).timesSec = [6.0, 7.0, 8.0, 9.0];
 spikePlan(3).timesSec = [2.5, 4.5, 5.5, 7.5, 4.9990, 5.0010];
+end
+
+function write_open_ephys_continuous(outputRoot, foldername, ephysData)
+continuousDir = fullfile(outputRoot, foldername, 'Record Node 101', 'experiment1', 'recording1', ...
+    'continuous', 'Acquisition_Board-100.acquisition_board');
+memoryDir = fullfile(outputRoot, foldername, 'Record Node 101', 'experiment1', 'recording1', ...
+    'continuous', 'Acquisition_Board-100.memory_usage');
+mkdir(continuousDir);
+mkdir(memoryDir);
+
+nSamples = size(ephysData, 1);
+adcData = int16([repmat(101, nSamples, 1), repmat(-101, nSamples, 1)]);
+write_binary(fullfile(continuousDir, 'continuous.dat'), [ephysData, adcData]);
+write_binary(fullfile(memoryDir, 'continuous.dat'), int16(zeros(max(1, round(nSamples / 200)), 1)));
 end
 
 function write_binary(filename, data)

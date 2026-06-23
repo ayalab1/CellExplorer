@@ -7740,10 +7740,15 @@ end
         startTimes = zeros(1, nEpochs);
         stopTimes = zeros(1, nEpochs);
         fids = zeros(1, nEpochs);
+        fileNChannels = zeros(1, nEpochs);
+        dataChannels = cell(1, nEpochs);
+        excludedChannels = cell(1, nEpochs);
 
         parent_dir = fileparts(basepath);
         sr = session.extracellular.sr;
         nChannels = session.extracellular.nChannels;
+        sampleBytes = getPrecisionBytes(UI.settings.precision);
+        mergePointSamples = loadMergePointSamples(basepath, session);
 
         found_any = false;
         lastStopTime = 0; % Tracks the end of the last successfully processed epoch (for fallback timing)
@@ -7802,11 +7807,24 @@ end
                 lastStopTime = epoch.stopTime;
             else
                 s = dir(foundFile);
-                duration = s.bytes / (nChannels * sr * 2);
+                duration = s.bytes / (nChannels * sr * sampleBytes);
                 startTimes(i) = lastStopTime;
                 stopTimes(i) = lastStopTime + duration;
                 lastStopTime = stopTimes(i);
             end
+            expectedSamples = [];
+            epochFieldName = matlab.lang.makeValidName(epochName);
+            if isfield(mergePointSamples, epochFieldName)
+                sampleRange = mergePointSamples.(epochFieldName);
+                expectedSamples = sampleRange(2) - sampleRange(1);
+                startTimes(i) = sampleRange(1) / sr;
+                stopTimes(i) = sampleRange(2) / sr;
+                lastStopTime = stopTimes(i);
+            elseif isfield(epoch,'startTime') && isfield(epoch,'stopTime') && ~isempty(epoch.startTime) && ~isempty(epoch.stopTime)
+                expectedSamples = round((epoch.stopTime - epoch.startTime) * sr);
+            end
+
+            [fileNChannels(i), dataChannels{i}, excludedChannels{i}] = inferSubEpochChannels(foundFile, expectedSamples, nChannels, sampleBytes);
             found_any = true;
         end
 
@@ -7831,6 +7849,9 @@ end
         epochFileInfo.stopTimes  = stopTimes(sortedIdx);
         epochFileInfo.fileNames  = fileNames(sortedIdx);
         epochFileInfo.fids       = fids(sortedIdx);
+        epochFileInfo.fileNChannels = fileNChannels(sortedIdx);
+        epochFileInfo.dataChannels = dataChannels(sortedIdx);
+        epochFileInfo.excludedChannels = excludedChannels(sortedIdx);
     end
 
     function foundFile = findOpenEphysContinuousDat(epochDir)
@@ -7863,14 +7884,18 @@ end
         streamFolders = cellfun(@fileparts, fullPaths, 'UniformOutput', false);
         streamNames = regexp(streamFolders, '[^\\/]+$', 'match', 'once');
         isLFP = contains(streamNames, 'LFP', 'IgnoreCase', true) | ...
-            ~cellfun(@isempty, regexp(streamNames, '\\.1$', 'once'));
-        fullPaths = fullPaths(~isLFP);
+            ~cellfun(@isempty, regexp(streamNames, '\.1$', 'once'));
+        isMemory = contains(streamNames, 'memory_usage', 'IgnoreCase', true);
+        fullPaths = fullPaths(~isLFP & ~isMemory);
         if isempty(fullPaths)
             return
         end
 
-        % Priority 1: Intan Rhythm Data board (Acquisition_Board-*)
-        idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Acquisition_Board.*Rhythm')), 1, 'first');
+        % Priority 1: Open Ephys acquisition board stream
+        idx = find(contains(fullPaths, 'acquisition_board', 'IgnoreCase', true), 1, 'first');
+        if isempty(idx)
+            idx = find(~cellfun(@isempty, regexpi(fullPaths, 'Acquisition_Board.*Rhythm')), 1, 'first');
+        end
         if ~isempty(idx)
             foundFile = fullPaths{idx};
             return
@@ -7907,6 +7932,7 @@ end
 
         nChannels = data.session.extracellular.nChannels;
         precision = UI.settings.precision;
+        sampleBytes = getPrecisionBytes(precision);
         lsb = UI.settings.leastSignificantBit;
         efi = UI.data.epochFileInfo;
 
@@ -7947,10 +7973,12 @@ end
             fid = efi.fids(epochIdx);
             epochStart = efi.startTimes(epochIdx);
             epochStop = efi.stopTimes(epochIdx);
+            fileNChannels = efi.fileNChannels(epochIdx);
+            dataChannels = efi.dataChannels{epochIdx};
 
             % Byte offset from the beginning of this epoch file
             tOffset = tCurrent - epochStart;
-            byteOffset = round(tOffset * sr) * nChannels * 2;
+            byteOffset = round(tOffset * sr) * fileNChannels * sampleBytes;
             fseek(fid, byteOffset, 'bof');
 
             % How many samples remain in this epoch from the current position?
@@ -7965,7 +7993,8 @@ end
                 continue
             end
 
-            chunk = double(fread(fid, [nChannels, samplesToRead], precision))' * lsb;
+            chunk = double(fread(fid, [fileNChannels, samplesToRead], precision))';
+            chunk = chunk(:, dataChannels) * lsb;
             actualRead = size(chunk, 1);
 
             if actualRead > 0
@@ -7976,6 +8005,69 @@ end
             else
                 break
             end
+        end
+    end
+
+    function mergePointSamples = loadMergePointSamples(basepath, session)
+        mergePointSamples = struct();
+        if ~isfield(session,'general') || ~isfield(session.general,'name') || isempty(session.general.name)
+            return
+        end
+        mergePointsFile = fullfile(basepath, [session.general.name, '.MergePoints.events.mat']);
+        if ~exist(mergePointsFile,'file')
+            return
+        end
+        mergeData = load(mergePointsFile, 'MergePoints');
+        if ~isfield(mergeData,'MergePoints')
+            return
+        end
+        MergePoints = mergeData.MergePoints;
+        if ~isfield(MergePoints,'timestamps_samples') || ~isfield(MergePoints,'foldernames')
+            return
+        end
+        foldernames = MergePoints.foldernames;
+        if isstring(foldernames)
+            foldernames = cellstr(foldernames);
+        end
+        if numel(foldernames) ~= size(MergePoints.timestamps_samples,1)
+            return
+        end
+        for ii = 1:numel(foldernames)
+            fieldName = matlab.lang.makeValidName(foldernames{ii});
+            mergePointSamples.(fieldName) = double(MergePoints.timestamps_samples(ii,:));
+        end
+    end
+
+    function [fileNChannels, dataChannels, excludedChannels] = inferSubEpochChannels(filename, expectedSamples, nChannels, sampleBytes)
+        if isempty(expectedSamples)
+            fileNChannels = nChannels;
+        else
+            fileInfo = dir(filename);
+            fileNChannels = fileInfo.bytes / (expectedSamples * sampleBytes);
+            if abs(fileNChannels - round(fileNChannels)) > 1e-9
+                error('NeuroScope2: Could not infer integer channel count for %s from %d samples and %d bytes.', filename, expectedSamples, fileInfo.bytes)
+            end
+            fileNChannels = round(fileNChannels);
+            if fileNChannels < nChannels
+                error('NeuroScope2: File %s has %d channels but session expects %d.', filename, fileNChannels, nChannels)
+            end
+        end
+        dataChannels = 1:nChannels;
+        excludedChannels = nChannels+1:fileNChannels;
+    end
+
+    function sampleBytes = getPrecisionBytes(precision)
+        switch lower(precision)
+            case {'int16','uint16'}
+                sampleBytes = 2;
+            case {'int32','uint32','single','float32'}
+                sampleBytes = 4;
+            case {'int64','uint64','double','float64'}
+                sampleBytes = 8;
+            case {'int8','uint8','char'}
+                sampleBytes = 1;
+            otherwise
+                error('NeuroScope2: Unsupported precision: %s', precision)
         end
     end
 
