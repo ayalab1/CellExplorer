@@ -8056,24 +8056,24 @@ end
 
     function [fileNChannels, dataChannels, excludedChannels, fileNSamples] = inferSubEpochChannels(filename, expectedSamples, nChannels, sampleBytes)
         fileInfo = dir(filename);
-        if isempty(expectedSamples)
-            fileNChannels = nChannels;
-            fileNSamples = fileInfo.bytes / (fileNChannels * sampleBytes);
-        else
-            candidateSamples = unique([expectedSamples, expectedSamples + 1, expectedSamples - 1], 'stable');
-            candidateSamples = candidateSamples(candidateSamples > 0);
-            candidateNChannels = fileInfo.bytes ./ (candidateSamples * sampleBytes);
-            isIntegerChannelCount = abs(candidateNChannels - round(candidateNChannels)) <= 1e-9;
-            isUsableChannelCount = isIntegerChannelCount & round(candidateNChannels) >= nChannels;
-            if ~any(isUsableChannelCount)
-                error('NeuroScope2: Could not infer integer channel count for %s from %d samples and %d bytes.', filename, expectedSamples, fileInfo.bytes)
-            end
-            bestIdx = find(isUsableChannelCount, 1, 'first');
-            fileNSamples = candidateSamples(bestIdx);
-            fileNChannels = round(candidateNChannels(bestIdx));
+        fileNChannels = nChannels;
+        bytesPerSample = fileNChannels * sampleBytes;
+        remainderBytes = rem(fileInfo.bytes, bytesPerSample);
+        if remainderBytes ~= 0
+            error('NeuroScope2:InvalidSubEpochFileSize', ...
+                'Sub-epoch dat file %s has %d bytes, which is not divisible by %d channels and %d bytes/sample.', ...
+                filename, fileInfo.bytes, fileNChannels, sampleBytes)
         end
+
+        fileNSamples = fileInfo.bytes / bytesPerSample;
+        if ~isempty(expectedSamples) && abs(fileNSamples - expectedSamples) > 1
+            warning('NeuroScope2:SubEpochSampleCountMismatch', ...
+                'Sub-epoch dat file %s has %d samples by file size, but metadata expected %d samples. Using file-derived sample count.', ...
+                filename, fileNSamples, expectedSamples)
+        end
+
         dataChannels = 1:nChannels;
-        excludedChannels = nChannels+1:fileNChannels;
+        excludedChannels = [];
     end
 
     function sampleBytes = getPrecisionBytes(precision)
