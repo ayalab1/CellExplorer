@@ -30,7 +30,10 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
     
     % Validating that Parallel Computing Toolbox is installed
     parallel_toolbox_installed = isToolboxInstalled('Parallel Computing Toolbox');
-    curve_fitting_toolbox_installed = isToolboxInstalled('Curve Fitting Toolbox');
+    curve_fitting_toolbox_installed = ce_curvefit_available();
+    if ~curve_fitting_toolbox_installed
+        warning('CellExplorer:CurveFitFallback','Curve Fitting Toolbox unavailable; using bounded base MATLAB fitting. Results may differ.');
+    end
     
     
     
@@ -38,9 +41,11 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
     % Curve Fitting Toolbox
     % % % % % % % % % % % % % % % % % % % % %
     
-    fit_equation = fittype('max(c*(exp(-(x-f)/a)-d*exp(-(x-f)/b))+h*exp(-(x-f)/g)+e,0)','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c','d','e','f','g','h'});
+    if curve_fitting_toolbox_installed
+        fit_equation = fittype('max(c*(exp(-(x-f)/a)-d*exp(-(x-f)/b))+h*exp(-(x-f)/g)+e,0)','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c','d','e','f','g','h'});
+    end
     
-    if parallel_toolbox_installed
+    if parallel_toolbox_installed && curve_fitting_toolbox_installed
         % Fitting ACGs in parfor
         gcp;
         parfor j = 1:size(acg_narrow,2)
@@ -49,6 +54,13 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
                 plotf0(:,j) = f0(x);
                 fit_params(:,j) = coeffvalues(f0);
                 rsquare(j) = gof.rsquare;
+            end
+        end
+    elseif ~curve_fitting_toolbox_installed
+        for j = 1:size(acg_narrow,2)
+            if ~any(isnan(acg_narrow(:,j)))
+                [fit_params(:,j),rsquare(j),plotf0(:,j)] = ...
+                    ce_bounded_curve_fit('acg',x,acg_narrow(x*2+offset,j),a0,lb,ub,false);
             end
         end
     else
@@ -77,6 +89,9 @@ function fit_params_out = fit_ACG(acg_narrow,plots)
         end
     end
     
+    if ~curve_fitting_toolbox_installed
+        fit_params_out.curveFitBackend = 'base MATLAB fminsearch';
+    end
     fit_params_out.acg_tau_decay = fit_params(1,:);
     fit_params_out.acg_tau_rise = fit_params(2,:);
     fit_params_out.acg_c = fit_params(3,:);
