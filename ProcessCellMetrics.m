@@ -550,7 +550,13 @@ if any(contains(parameters.metrics,{'waveform_metrics','all'})) && ~any(contains
         cell_metrics.general.chanCoords = chanCoords;
         
         % Fit exponential
-        fit_eqn = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
+        useCurveFittingToolbox = ce_curvefit_available();
+        if useCurveFittingToolbox
+            fit_eqn = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
+        else
+            parameters.waveformCurveFitBackend = 'base MATLAB fminsearch';
+            warning('CellExplorer:CurveFitFallback','Curve Fitting Toolbox unavailable; using bounded base MATLAB fitting. Results may differ.');
+        end
         xdata = {};
         ydata = {};
         
@@ -596,8 +602,13 @@ if any(contains(parameters.metrics,{'waveform_metrics','all'})) && ~any(contains
                 x2 = channel_distance(1:nChannelFit)';
                 xdata{j} = x2;
                 ydata{j} = y;
-                f0 = fit(x2',y',fit_eqn,'StartPoint',[cell_metrics.peakVoltage(j), 30, 5],'Lower',[1, 0.001, 0],'Upper',[5000, 200, 1000]);
-                fitCoeffValues = coeffvalues(f0);
+                if useCurveFittingToolbox
+                    f0 = fit(x2',y',fit_eqn,'StartPoint',[cell_metrics.peakVoltage(j), 30, 5],'Lower',[1, 0.001, 0],'Upper',[5000, 200, 1000]);
+                    fitCoeffValues = coeffvalues(f0);
+                else
+                    fitCoeffValues = ce_bounded_curve_fit('exponential',x2',y', ...
+                        [cell_metrics.peakVoltage(j), 30, 5],[1, 0.001, 0],[5000, 200, 1000],false);
+                end
                 cell_metrics.peakVoltage_expFit(j) = fitCoeffValues(2);
                 if parameters.debugMode && ishandle(handle_subfig1)
                     fig100.Name = ['Cell ',num2str(j),'/',num2str(cell_metrics.general.cellCount)];
@@ -748,6 +759,9 @@ if any(contains(parameters.metrics,{'acg_metrics','all'})) && ~any(contains(para
         
         dispLog('Fitting triple exponential to ACG',basename)
         fit_params = fit_ACG(acg_metrics.acg_narrow,parameters.debugMode);
+        if isfield(fit_params,'curveFitBackend')
+            parameters.acgCurveFitBackend = fit_params.curveFitBackend;
+        end
         cell_metrics.acg_tau_decay = fit_params.acg_tau_decay;
         cell_metrics.acg_tau_rise = fit_params.acg_tau_rise;
         cell_metrics.acg_c = fit_params.acg_c;

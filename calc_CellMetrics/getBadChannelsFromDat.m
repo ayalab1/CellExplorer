@@ -68,9 +68,6 @@ s = dir(fullfile(basepath,fileNameRaw));
 duration = s.bytes/(2*nChannels*sr);
 rawData = memmapfile(fullfile(basepath,fileNameRaw),'Format',precision,'writable',false);
 
-% Fit exponential
-g = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
-
 spkTmp = params.wfWin_sec/1.8 + rand(params.nPull,1)*(duration-2*params.wfWin_sec/1.8);
 
 spkTmp = round(sr * spkTmp(:));

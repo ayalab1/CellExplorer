@@ -122,7 +122,12 @@ t1 = toc(timerVal);
 [waveformSource,duration,waveformSourceLabel] = initializeWaveformSource(datFile,basepath,basename,nChannels,sr,precision);
 
 % Fit exponential
-g = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
+useCurveFittingToolbox = ce_curvefit_available();
+if useCurveFittingToolbox
+    g = fittype('a*exp(-x/b)+c','dependent',{'y'},'independent',{'x'},'coefficients',{'a','b','c'});
+else
+    warning('CellExplorer:CurveFitFallback','Curve Fitting Toolbox unavailable; using bounded base MATLAB fitting. Results may differ.');
+end
 
 for i = 1:length(params.unitsToProcess)
     ii = params.unitsToProcess(i);
@@ -245,8 +250,13 @@ for i = 1:length(params.unitsToProcess)
     x = 1:nChannelFit;
     y = spikes.peakVoltage_sorted{ii}(x);
     if ~isempty(spikes.times{ii})
-        f0 = fit(x',y',g,'StartPoint',[spikes.peakVoltage(ii), 5, 5],'Lower',[1, 0.001, 0],'Upper',[5000, 50, 1000]);
-        fitCoeffValues = coeffvalues(f0);
+        if useCurveFittingToolbox
+            f0 = fit(x',y',g,'StartPoint',[spikes.peakVoltage(ii), 5, 5],'Lower',[1, 0.001, 0],'Upper',[5000, 50, 1000]);
+            fitCoeffValues = coeffvalues(f0);
+        else
+            fitCoeffValues = ce_bounded_curve_fit('exponential',x',y', ...
+                [spikes.peakVoltage(ii), 5, 5],[1, 0.001, 0],[5000, 50, 1000],false);
+        end
         spikes.peakVoltage_expFitLengthConstant(ii) = fitCoeffValues(2);
     else
         spikes.peakVoltage_expFitLengthConstant(ii) = nan;
@@ -304,6 +314,9 @@ for i = 1:length(params.unitsToProcess)
 end
 
 spikes.processinginfo.params.WaveformsSource = waveformSourceLabel;
+if ~useCurveFittingToolbox
+    spikes.processinginfo.params.curveFitBackend = 'base MATLAB fminsearch';
+end
 spikes.processinginfo.params.WaveformsFiltFreq = params.filtFreq;
 spikes.processinginfo.params.Waveforms_nPull = params.nPull;
 spikes.processinginfo.params.WaveformsWin_sec = wfWin_sec;

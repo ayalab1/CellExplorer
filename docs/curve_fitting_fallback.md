@@ -1,0 +1,5 @@
+# Curve-fitting toolbox fallback
+
+Waveform and ACG processing use Curve Fitting Toolbox when a license can be checked out. When the toolbox is missing or every license seat is occupied, CellExplorer falls back to bounded least-squares fitting with base MATLAB `fminsearch`. The exponential and ACG models, bounds, and initial values match the existing models; the fallback retries poor ACG fits from two deterministic initial values. A warning and processing metadata identify when the fallback was used; the toolbox path retains its previous output fields.
+
+The two optimizers are not numerically identical. In particular, ACG parameters can be weakly identified and different fits can produce similar curves. Validate the fallback on representative recordings before combining these fitted metrics with analyses produced using the toolbox. A synthetic regression test compares the backends when a toolbox license is available; if no license seat is available, that comparison is skipped and must be run later. This fallback does not supply other MATLAB toolboxes, channel coordinates, or probe geometry.
