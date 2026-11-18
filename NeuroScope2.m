@@ -518,10 +518,8 @@ end
         UI.panel.timeseriesdata.showTimeseriesBelowTrace = uicontrol('Parent',UI.panel.timeseriesdata.main,'Style','checkbox','Units','normalized','Position',[0 0 0.5 0.20], 'value', 0,'String','Below traces','Callback',@showTimeseriesBelowTrace,'KeyPressFcn', @keyPress,'tooltip','Show time series data below traces');
         uicontrol('Parent',UI.panel.timeseriesdata.main,'Style','pushbutton','Units','normalized','Position',[0.5 0 0.49 0.19],'String','Metadata','Callback',@editIntanMeta,'KeyPressFcn', @keyPress,'tooltip','Edit session metadata');
             
-        % Defining flexible panel heights
-        set(UI.panel.general.main, 'Heights', [65 210 -210 35 -90 35 100 40 150],'MinimumHeights',[65 210 200 35 140 35 50 30 150]);
         UI.panel.general.main1.MinimumWidths = 218;
-        UI.panel.general.main1.MinimumHeights = 975;
+        setGeneralPanelHeights(0);
         
         % % % % % % % % % % % % % % % % % % % % % %
         % 2. PANEL: Spikes related metrics
@@ -5356,24 +5354,13 @@ end
         % Timeseries files
         updateTimeSeriesDataList
         
-        % Defining flexible panel heights for lists of electrode groups, channel tags and analog and digital timeseries
-        tableHeights_ElectrodeGroups = max([data.session.extracellular.nElectrodeGroups*18+50,200]);
-        if isfield(UI,'channelTags') && ~isempty(UI.channelTags)
-            nTags = numel(UI.channelTags);
-        else
-            nTags = 1;
-        end
-        tableHeights_ChannelTags = nTags*18+30;
-        
+        % Resize the General tab for the raw time series files.
         if isfield(data.session,'timeSeries') && ~isempty(data.session.timeSeries)
             nfiles = numel(fieldnames(data.session.timeSeries));
         else
             nfiles = 0;
         end
-        tableHeights_Timeseries3 = nfiles*18+30;
-        
-        set(UI.panel.general.main, 'MinimumHeights',[65 210 tableHeights_ElectrodeGroups 35 tableHeights_ChannelTags 35 50 30 tableHeights_Timeseries3]);
-        UI.panel.general.main1.MinimumHeights = 605 + tableHeights_ElectrodeGroups + tableHeights_ChannelTags + tableHeights_Timeseries3;
+        setGeneralPanelHeights(nfiles);
         
         % Defining flexible panel heights for events and timeseries files
         if isfield(UI.data.detectecFiles,'timeSeries') && ~isempty(data.session.timeSeries)
@@ -6112,6 +6099,17 @@ end
             tableData = {false,'','',''};
         end
         UI.table.timeseriesdata.Data =  tableData;
+    end
+
+    function setGeneralPanelHeights(nTimeSeriesFiles)
+        % The channel lists scroll internally, so their row counts do not set the sidebar height.
+        heights = [65 210 -210 35 -90 35 100 40 max(150,nTimeSeriesFiles*18+30)];
+        minimumHeights = heights;
+        minimumHeights([3 5]) = [200 140];
+        panel = UI.panel.general.main;
+        set(panel,'Heights',heights,'MinimumHeights',minimumHeights);
+        UI.panel.general.main1.MinimumHeights = sum(minimumHeights) + ...
+            2*panel.Padding + (numel(heights)-1)*panel.Spacing;
     end
 
     function updateChannelTags
