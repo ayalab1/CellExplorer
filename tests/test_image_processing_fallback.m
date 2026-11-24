@@ -63,6 +63,14 @@ verifyEqual(testCase, body.XData(:)', [2 8 8 2]);
 verifyEqual(testCase, body.YData(:)', [3 3 11 11]);
 end
 
+function testRectangleSelectionIncludesBoundary(testCase)
+position = [2 3 6 8];
+% Sites on each edge and at two corners, followed by inside and outside sites.
+x = [2 8 5 5 2 8 5 1 9 5 5 NaN];
+y = [7 7 3 11 3 11 7 7 7 2 12 7];
+verifyEqual(testCase, ce_probe_channels_in_rectangle(x, y, position), 1:7);
+end
+
 function testRectangleToolboxParity(testCase)
 requireToolbox(testCase, 'drawrectangle');
 [fig, ax] = invisibleAxes();
@@ -84,7 +92,13 @@ positions = {position, ce_probe_rectangle_drag(position, [2 -3], [0 0]), ...
 for k = 1:numel(positions)
     setFallback(positions{k});
     setNative(positions{k});
-    verifyEqual(testCase, inpolygon(x, y, body.XData, body.YData), inROI(native, x, y));
+    % Both widgets supply bounds to the same channel-selection code.
+    % inROI uses different edge rules and is not used by NeuroScope2.
+    fallbackPosition = [min(body.XData) min(body.YData) ...
+        max(body.XData)-min(body.XData) max(body.YData)-min(body.YData)];
+    verifyEqual(testCase, fallbackPosition, native.Position);
+    verifyEqual(testCase, ce_probe_channels_in_rectangle(x, y, fallbackPosition), ...
+        ce_probe_channels_in_rectangle(x, y, native.Position));
 end
 end
 

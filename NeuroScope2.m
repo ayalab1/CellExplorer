@@ -5739,9 +5739,8 @@ end
 
     function updateChanCoordsPlot(pos)
         UI.settings.stream = false;
-        x1 = [pos(1),pos(1)+pos(3),pos(1)+pos(3),pos(1)];
-        y1 = [pos(2),pos(2),pos(2)+pos(4),pos(2)+pos(4)];
-        UI.settings.chanCoordsToPlot = find(inpolygon(data.session.extracellular.chanCoords.x,data.session.extracellular.chanCoords.y, x1 ,y1));
+        coords = data.session.extracellular.chanCoords;
+        UI.settings.chanCoordsToPlot = ce_probe_channels_in_rectangle(coords.x, coords.y, pos);
         
         updateChanCoordsColorHighlight
         initTraces
