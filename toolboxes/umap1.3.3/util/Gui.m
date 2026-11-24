@@ -3662,7 +3662,7 @@ classdef Gui
                         if nargin<3 || isempty(cdata)
                             cdata=imread(file);
                         end
-                        subX=imresize(cdata, scale);
+                        subX=ce_resize_image(cdata, scale);
                         imwrite(subX, newFile);
                     end
                 catch ex
