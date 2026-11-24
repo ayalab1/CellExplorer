@@ -79,7 +79,7 @@ When navigating a recording, only data not currently in memory (shown on the scr
 + `Detect spikes (µV)`: Detects spikes above/below the specified threshold across all channels, in units of µV (above a positive threshold; below a negative threshold). Spikes are detected on the 500Hz High-pass filtered traces (3rd order Zero-phase digital butter filter). 
 
 ### List of electrode groups, Channels, Regions and Layout
-This panel allows for selecting channel configurations using the electrode groups, the full list of channels, brain regions assignments and electrode layout. In the list of electrode groups, groups can be selected or hidden, and the colors can be altered by clicking the colores squares. In the layout panel, channels are selected by drawing a square on top of the electrode sites. The  square can be moved and boundaries altered by dragging the square. The layout tab requires the [Image Processing Toolbox](https://www.mathworks.com/products/image.html).
+This panel allows for selecting channel configurations using the electrode groups, the full list of channels, brain regions assignments and electrode layout. In the list of electrode groups, groups can be selected or hidden, and the colors can be altered by clicking the colores squares. In the layout panel, channels are selected by placing a rectangle over the electrode sites. Drag inside the rectangle to move it, or drag a side or corner to resize it. Click **All** to reset the selection.
 
 
 ### Channel tags

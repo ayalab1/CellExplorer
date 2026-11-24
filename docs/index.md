@@ -37,7 +37,7 @@ mex -O FindInInterval.c
   * [Signal Processing Toolbox](https://se.mathworks.com/products/signal.html) (required).
   * [Statistics and Machine Learning Toolbox](https://se.mathworks.com/products/statistics.html) (required).
   * [Parallel Computing Toolbox](https://se.mathworks.com/products/parallel-computing.html) (optional, allows for parallel processing of certain features).
-  * [Image Processing Toolbox](https://se.mathworks.com/products/image.html) (optional for NeuroScope2, allows for selection of channels from the probe layout).
+  * [Image Processing Toolbox](https://se.mathworks.com/products/image.html) (optional. CellExplorer and NeuroScope2 provide fallbacks for installations without it).
   * [DSP System Toolbox](https://se.mathworks.com/products/dsp-system.html) or the [Audio Toolbox](https://www.mathworks.com/products/audio.html) (optional for NeuroScope2 to stream audio of traces).
 
 That's it! Now you can explore the software with below example data or try one of the tutorials with your own data.

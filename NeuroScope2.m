@@ -4338,15 +4338,8 @@ end
                     UI.settings.brainRegionsToHide = brainRegions(~vertcat(UI.table.brainRegions.Data{:,1}));
                     initTraces;
                     uiresume(UI.fig);
-                elseif UI.uitabgroup_channels.Selection == 4 && isfield(data.session.extracellular,'chanCoords') && ~isempty(data.session.extracellular.chanCoords.x) && ~isempty(data.session.extracellular.chanCoords.y)
-                    image_toolbox_installed = isToolboxInstalled('Image Processing Toolbox');
-                    if ~verLessThan('matlab', '9.5') & image_toolbox_installed
-                        x_lim_data = [min(data.session.extracellular.chanCoords.x),max(data.session.extracellular.chanCoords.x)];
-                        y_lim_data = [min(data.session.extracellular.chanCoords.y),max(data.session.extracellular.chanCoords.y)];
-                        x_padding = 0.03*diff(x_lim_data);
-                        y_padding = 0.03*diff(y_lim_data);
-                        UI.plotpoints.roi_ChanCoords.Position = [x_lim_data(1)-x_padding,y_lim_data(1)-y_padding,1.06*diff(x_lim_data),1.06*diff(y_lim_data)];
-                    end
+                elseif UI.uitabgroup_channels.Selection == 4 && ~isempty(UI.plotpoints.resetChanCoordsROI)
+                    UI.plotpoints.resetChanCoordsROI();
                 end
             otherwise
                 data.session = gui_session(data.session,[],'extracellular');
@@ -5392,19 +5385,29 @@ end
         
         % Generating Probe layout visualization (Channel coordinates)
         UI.settings.chanCoordsToPlot = 1:data.session.extracellular.nChannels;
+        UI.plotpoints.resetChanCoordsROI = [];
         delete(UI.chanCoordsAxes.Children)
         if isfield(data.session.extracellular,'chanCoords') && isfield(data.session.extracellular.chanCoords,'x') &&~isempty(data.session.extracellular.chanCoords.x) && ~isempty(data.session.extracellular.chanCoords.y)
             chanCoordsVisualization(data.session.extracellular.chanCoords,UI.chanCoordsAxes);
             updateChanCoordsColorHighlight
             
-            image_toolbox_installed = isToolboxInstalled('Image Processing Toolbox');
-            if ~verLessThan('matlab', '9.5') && image_toolbox_installed
-                x_lim_data = [min(data.session.extracellular.chanCoords.x),max(data.session.extracellular.chanCoords.x)];
-                y_lim_data = [min(data.session.extracellular.chanCoords.y),max(data.session.extracellular.chanCoords.y)];
-                x_padding = 0.03*diff(x_lim_data);
-                y_padding = 0.03*diff(y_lim_data);
-                UI.plotpoints.roi_ChanCoords = drawrectangle(UI.chanCoordsAxes,'Position',[x_lim_data(1)-x_padding,y_lim_data(1)-y_padding,1.06*diff(x_lim_data),1.06*diff(y_lim_data)],'LineWidth',2,'FaceAlpha',0.1,'Deletable',false,'FixedAspectRatio',false);
-                addlistener(UI.plotpoints.roi_ChanCoords,'ROIMoved',@updateChanCoordsPlot);
+            coords = data.session.extracellular.chanCoords;
+            limits = [min(coords.x(:)), min(coords.y(:)); max(coords.x(:)), max(coords.y(:))];
+            if all(isfinite(limits(:)))
+                span = diff(limits, 1, 1);
+                center = mean(limits, 1);
+                % Leave room for handles on a single row or column of sites.
+                width = 1.06 * span;
+                width(span == 0) = 0.06 * max([span, 1]);
+                if span(1) == 0
+                    xlim(UI.chanCoordsAxes, center(1) + 0.55 * width(1) * [-1 1]);
+                end
+                if span(2) == 0
+                    ylim(UI.chanCoordsAxes, center(2) + 0.55 * width(2) * [-1 1]);
+                end
+                position = [center - width / 2, width];
+                setPosition = ce_probe_rectangle(UI.chanCoordsAxes, position, @updateChanCoordsPlot);
+                UI.plotpoints.resetChanCoordsROI = @() resetChanCoordsROI(setPosition, position);
             end
         end
         
@@ -5729,12 +5732,15 @@ end
         end
     end
                 
-    function updateChanCoordsPlot(~,~)
+    function resetChanCoordsROI(setPosition, position)
+        setPosition(position);
+        updateChanCoordsPlot(position);
+    end
+
+    function updateChanCoordsPlot(pos)
         UI.settings.stream = false;
-        pos = UI.plotpoints.roi_ChanCoords.Position;
-        x1 = [pos(1),pos(1)+pos(3),pos(1)+pos(3),pos(1)];
-        y1 = [pos(2),pos(2),pos(2)+pos(4),pos(2)+pos(4)];
-        UI.settings.chanCoordsToPlot = find(inpolygon(data.session.extracellular.chanCoords.x,data.session.extracellular.chanCoords.y, x1 ,y1));
+        coords = data.session.extracellular.chanCoords;
+        UI.settings.chanCoordsToPlot = ce_probe_channels_in_rectangle(coords.x, coords.y, pos);
         
         updateChanCoordsColorHighlight
         initTraces

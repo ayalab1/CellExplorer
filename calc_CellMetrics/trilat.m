@@ -24,9 +24,11 @@ X = X(:);
 Y = Y(:);
 A = A(:);
 
-if nargin < 3
-        plots = 0;
-        waveforms_in = [];
+if nargin < 5
+    plots = false;
+end
+if nargin < 6
+    waveforms_in = [];
 end
 
 d = 1000*A.^(-2);
@@ -42,10 +44,9 @@ b = mdl.Coefficients{1:2,{'Estimate'}};
 
 if plots
     figure
-    subplot(1,2,1)
-    if isToolboxInstalled('Image Processing Toolbox')
-        viscircles(X, d,'color',[0,0,0,0.1]), hold on
-    end
+    ax = subplot(1,2,1);
+    ce_plot_trilateration_circles(ax, [X,Y], d);
+    hold(ax, 'on')
     scatter(b(1),b(2), 70, [0 0 1], 'filled')
     scatter(X,Y, 70, [0 0 0], 'filled')
     hold off

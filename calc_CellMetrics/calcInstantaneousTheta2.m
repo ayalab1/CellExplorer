@@ -62,7 +62,7 @@ if ~exist(saveAsFullfile,'file') || forceReload
     
     % Theta frequency estimated using the spectrogram
     [wt,w,wt_t] = spectrogram(signal_filtered,srLfp,2*srLfp/10,freqlist,srLfp);
-    wt = medfilt2(abs(wt),[2,10]);
+    wt = ce_theta_median_filter(abs(wt));
     h = 1/10*ones(10,1);
     H= h*h';
     wt = filter2(H,wt);

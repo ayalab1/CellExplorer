@@ -737,7 +737,11 @@ classdef mixture < iosr.dsp.audio
             numchans = size(st,3);
             w = zeros(1,numchans);
             for c = 1:numchans
-                w(c) = corr2(st(:,:,c),si(:,:,c));
+                target = double(st(:,:,c));
+                interferer = double(si(:,:,c));
+                target = target(:) - mean(target(:));
+                interferer = interferer(:) - mean(interferer(:));
+                w(c) = sum(target .* interferer) / sqrt(sum(target.^2) * sum(interferer.^2));
             end
             
         end

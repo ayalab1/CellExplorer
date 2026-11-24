@@ -21,9 +21,11 @@ function b = trilat3(X,A,beta0,plots,waveforms_in)
 % Turning off interation limit warning
 warning('off','stats:nlinfit:IterationLimitExceeded')
 
-if nargin < 2
-        plots = 0;
-        waveforms_in = [];
+if nargin < 4
+    plots = false;
+end
+if nargin < 5
+    waveforms_in = [];
 end
 d = 1000*A.^(-2);
 tbl = table(X, d');
@@ -36,13 +38,15 @@ b = mdl.Coefficients{1:3,{'Estimate'}};
 
 if plots
     figure
-    subplot(1,2,1)
-    viscircles(X(), d,'color',[0,0,0,0.1]), hold on
-    scatter(b(1),b(2),b(3), 70, [0 0 1], 'filled')
-    scatter(X(:,1),X(:,2),X(:,3), 70, [0 0 0], 'filled')
+    ax = subplot(1,2,1);
+    ce_plot_trilateration_circles(ax, X, d);
+    hold(ax, 'on')
+    view(ax, 3)
+    scatter3(b(1),b(2),b(3), 70, [0 0 1], 'filled')
+    scatter3(X(:,1),X(:,2),X(:,3), 70, [0 0 0], 'filled')
     hold off
     subplot(1,2,2)
-    scatter(X(:,1),X(:,2),X(:,3), 70, [0 0 0], 'filled'), hold on
+    scatter3(X(:,1),X(:,2),X(:,3), 70, [0 0 0], 'filled'), hold on
     
     % legend({'Recording sites'})
     title('Trilaterated spatial location'), xlabel('µm'), ylabel('Depth (µm)')
